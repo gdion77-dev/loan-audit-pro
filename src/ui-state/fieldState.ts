@@ -140,9 +140,10 @@ export function parseTextToField(
   raw: string,
   source: FieldSource = 'manual',
 ): FieldState<string> {
-  const trimmed = raw.trim();
-  if (trimmed === '') return fieldUnknown<string>(source);
-  return fieldValue<string>(trimmed, source);
+  // Only a fully-blank string is UNKNOWN. Otherwise keep the text exactly
+  // as typed — including spaces between or after words.
+  if (raw.trim() === '') return fieldUnknown<string>(source);
+  return fieldValue<string>(raw, source);
 }
 
 export interface NumberParseResult {
