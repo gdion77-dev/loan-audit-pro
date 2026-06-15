@@ -13,7 +13,7 @@
     "build": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "buffer": "^6.0.3"
+    "buffer": "^6.0.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
