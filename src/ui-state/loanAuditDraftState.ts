@@ -1,0 +1,230 @@
+/**
+ * Loan Audit PRO — src/ui-state/loanAuditDraftState.ts
+ * ------------------------------------------------------------------
+ * Lightweight, type-safe DRAFT state for the main form sections.
+ * This is a skeleton, NOT the final form: each section holds a few
+ * representative fields as FieldState so the three-state discipline
+ * (value / explicit_zero / unknown) is enforced from the start.
+ *
+ * No engine imports, no calculation, no pipeline call. Amounts are
+ * held as draft numbers (euro cents where numeric) only to exercise
+ * the field model; conversion to the locked domain types happens in
+ * a later wiring step.
+ */
+
+import {
+  fieldUnknown,
+  fieldValue,
+  type FieldState,
+} from './fieldState';
+
+/* ------------------------------------------------------------------ */
+/* Per-section drafts                                                  */
+/* ------------------------------------------------------------------ */
+
+export interface CaseInfoDraft {
+  readonly debtorName: FieldState<string>;
+  readonly contractNumber: FieldState<string>;
+  readonly institution: FieldState<string>;
+  readonly servicer: FieldState<string>;
+}
+
+export interface LoanTermsDraft {
+  readonly principalCents: FieldState<number>;
+  readonly termMonths: FieldState<number>;
+  readonly startDate: FieldState<string>;
+  readonly endDate: FieldState<string>;
+}
+
+export interface RateConfigDraft {
+  /** e.g. 'fixed' | 'floating' — kept as draft string at this stage. */
+  readonly regimeKind: FieldState<string>;
+  readonly annualRatePercent: FieldState<number>;
+  readonly spreadPercent: FieldState<number>;
+  readonly law128Status: FieldState<string>;
+}
+
+export interface BankScheduleDraftRow {
+  readonly rowId: FieldState<string>;
+  readonly dueDate: FieldState<string>;
+  readonly installmentCents: FieldState<number>;
+  readonly principalCents: FieldState<number>;
+  readonly interestCents: FieldState<number>;
+  readonly balanceCents: FieldState<number>;
+  readonly note: FieldState<string>;
+}
+
+export interface BankScheduleDraft {
+  readonly rows: readonly BankScheduleDraftRow[];
+  readonly dayCountConvention: FieldState<string>;
+  readonly sourceNote: FieldState<string>;
+}
+
+export interface ActualPaymentDraftRow {
+  readonly paymentId: FieldState<string>;
+  readonly paymentDate: FieldState<string>;
+  readonly amountCents: FieldState<number>;
+  readonly matchedScheduleRowId: FieldState<string>;
+  readonly note: FieldState<string>;
+}
+
+export interface ActualPaymentsDraft {
+  readonly rows: readonly ActualPaymentDraftRow[];
+  readonly sourceNote: FieldState<string>;
+}
+
+export interface RecalculationSettingsDraft {
+  /** 'equal_principal' | 'equal_installment' — draft string for now. */
+  readonly scheduleMode: FieldState<string>;
+  readonly roundingMode: FieldState<string>;
+  readonly feesAndPremiumsPerPeriodCents: FieldState<number>;
+}
+
+/* ------------------------------------------------------------------ */
+/* Aggregate draft state                                               */
+/* ------------------------------------------------------------------ */
+
+export interface LoanAuditDraftState {
+  readonly caseInfoDraft: CaseInfoDraft;
+  readonly loanTermsDraft: LoanTermsDraft;
+  readonly rateConfigDraft: RateConfigDraft;
+  readonly bankScheduleDraft: BankScheduleDraft;
+  readonly actualPaymentsDraft: ActualPaymentsDraft;
+  readonly recalculationSettingsDraft: RecalculationSettingsDraft;
+}
+
+/**
+ * Fresh draft state: every field starts UNKNOWN (value null) — never
+ * zero. This is the safe initial condition before any user input or
+ * import; explicit zeros only ever arise from deliberate entry.
+ */
+export function createEmptyDraftState(): LoanAuditDraftState {
+  return {
+    caseInfoDraft: {
+      debtorName: fieldUnknown<string>('manual'),
+      contractNumber: fieldUnknown<string>('manual'),
+      institution: fieldUnknown<string>('manual'),
+      servicer: fieldUnknown<string>('manual'),
+    },
+    loanTermsDraft: {
+      principalCents: fieldUnknown<number>('manual'),
+      termMonths: fieldUnknown<number>('manual'),
+      startDate: fieldUnknown<string>('manual'),
+      endDate: fieldUnknown<string>('manual'),
+    },
+    rateConfigDraft: {
+      regimeKind: fieldUnknown<string>('manual'),
+      annualRatePercent: fieldUnknown<number>('manual'),
+      spreadPercent: fieldUnknown<number>('manual'),
+      law128Status: fieldUnknown<string>('manual'),
+    },
+    bankScheduleDraft: {
+      rows: [],
+      dayCountConvention: fieldUnknown<string>('manual'),
+      sourceNote: fieldUnknown<string>('manual'),
+    },
+    actualPaymentsDraft: {
+      rows: [],
+      sourceNote: fieldUnknown<string>('manual'),
+    },
+    recalculationSettingsDraft: {
+      scheduleMode: fieldUnknown<string>('manual'),
+      roundingMode: fieldUnknown<string>('manual'),
+      feesAndPremiumsPerPeriodCents: fieldUnknown<number>('manual'),
+    },
+  };
+}
+
+/**
+ * A fresh bank schedule draft row: rowId is a concrete generated
+ * value (so rows are addressable), every economic field starts
+ * UNKNOWN — never zero.
+ */
+export function createEmptyBankScheduleDraftRow(rowId: string): BankScheduleDraftRow {
+  return {
+    rowId: fieldValue<string>(rowId, 'manual'),
+    dueDate: fieldUnknown<string>('manual'),
+    installmentCents: fieldUnknown<number>('manual'),
+    principalCents: fieldUnknown<number>('manual'),
+    interestCents: fieldUnknown<number>('manual'),
+    balanceCents: fieldUnknown<number>('manual'),
+    note: fieldUnknown<string>('manual'),
+  };
+}
+
+/**
+ * A fresh actual payment draft row: paymentId is a concrete generated
+ * value (so rows are addressable), every other field starts UNKNOWN —
+ * the amount is never zero by default.
+ */
+export function createEmptyActualPaymentDraftRow(paymentId: string): ActualPaymentDraftRow {
+  return {
+    paymentId: fieldValue<string>(paymentId, 'manual'),
+    paymentDate: fieldUnknown<string>('manual'),
+    amountCents: fieldUnknown<number>('manual'),
+    matchedScheduleRowId: fieldUnknown<string>('manual'),
+    note: fieldUnknown<string>('manual'),
+  };
+}
+
+/** Section keys, handy for iteration in tests and future wiring. */
+export const DRAFT_SECTION_KEYS = [
+  'caseInfoDraft',
+  'loanTermsDraft',
+  'rateConfigDraft',
+  'bankScheduleDraft',
+  'actualPaymentsDraft',
+  'recalculationSettingsDraft',
+] as const satisfies readonly (keyof LoanAuditDraftState)[];
+
+/* ------------------------------------------------------------------ */
+/* Select option metadata (UI labels ↔ stable codes)                   */
+/* ------------------------------------------------------------------ */
+
+export interface DraftSelectOption {
+  readonly code: string;
+  readonly label: string;
+  readonly unknown?: boolean;
+}
+
+/** Καθεστώς επιτοκίου. */
+export const REGIME_KIND_OPTIONS: readonly DraftSelectOption[] = [
+  { code: 'fixed', label: 'Σταθερό' },
+  { code: 'floating', label: 'Κυμαινόμενο' },
+  { code: 'unknown', label: 'Άγνωστο', unknown: true },
+] as const;
+
+/** Καθεστώς εισφοράς Ν.128/75. */
+export const LAW128_STATUS_OPTIONS: readonly DraftSelectOption[] = [
+  { code: 'included_in_rate', label: 'Περιλαμβάνεται στο επιτόκιο' },
+  { code: 'added_separately', label: 'Προστίθεται χωριστά' },
+  { code: 'unknown', label: 'Άγνωστο / απαιτείται έλεγχος', unknown: true },
+] as const;
+
+/** Τύπος επανυπολογισμού. */
+export const SCHEDULE_MODE_OPTIONS: readonly DraftSelectOption[] = [
+  { code: 'equal_principal', label: 'Ίση δόση κεφαλαίου' },
+  { code: 'equal_installment', label: 'Σταθερή τοκοχρεολυτική δόση' },
+  { code: 'unknown', label: 'Άγνωστο', unknown: true },
+] as const;
+
+/** Πολιτική στρογγυλοποίησης. */
+export const ROUNDING_MODE_OPTIONS: readonly DraftSelectOption[] = [
+  { code: 'half_up', label: 'Εμπορική στρογγυλοποίηση' },
+  { code: 'floor', label: 'Προς τα κάτω' },
+  { code: 'ceil', label: 'Προς τα πάνω' },
+  { code: 'unknown', label: 'Άγνωστο', unknown: true },
+] as const;
+
+/**
+ * Σύμβαση ημερομέτρησης (day-count). Codes match the locked
+ * DayCountConvention type exactly (ACT_360 / ACT_365 / 30_360 /
+ * 30E_360); the «Άγνωστο» option maps to FieldState unknown.
+ */
+export const DAY_COUNT_CONVENTION_OPTIONS: readonly DraftSelectOption[] = [
+  { code: 'ACT_360', label: 'ACT/360' },
+  { code: 'ACT_365', label: 'ACT/365 Fixed' },
+  { code: '30_360', label: '30/360 US' },
+  { code: '30E_360', label: '30E/360' },
+  { code: 'unknown', label: 'Άγνωστο', unknown: true },
+] as const;
