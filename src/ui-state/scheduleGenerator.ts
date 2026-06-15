@@ -52,6 +52,24 @@ function toRoundingMode(code: string | null): RoundingMode | null {
     : null;
 }
 
+/**
+ * Adds one calendar month to an ISO date (YYYY-MM-DD), clamping the day
+ * to the last valid day of the target month (e.g. Jan 31 → Feb 28/29).
+ * Mirrors the engine's own month stepping so generated due dates align
+ * with how the engine advances subsequent periods. This is calendar
+ * arithmetic for scheduling, not a financial formula.
+ */
+function addOneMonthClamped(date: string): string {
+  const y = Number(date.slice(0, 4));
+  const m = Number(date.slice(5, 7));
+  const d = Number(date.slice(8, 10));
+  const targetY = m === 12 ? y + 1 : y;
+  const targetM = m === 12 ? 1 : m + 1;
+  const daysInTarget = new Date(Date.UTC(targetY, targetM, 0)).getUTCDate();
+  const clampedD = Math.min(d, daysInTarget);
+  return `${targetY}-${String(targetM).padStart(2, '0')}-${String(clampedD).padStart(2, '0')}`;
+}
+
 /** Maps a Money|null cents value into a FieldState (null stays unknown). */
 function moneyField(cents: number | null) {
   return cents === null ? fieldUnknown<number>('derived') : fieldValue<number>(cents, 'derived');
@@ -161,11 +179,13 @@ export function generateScheduleRows(
   }
 
   const roundingMode = toRoundingMode(settings.roundingMode);
-  // first due date: loan start date is the basis; engines derive monthly
-  // due dates from firstDueDate. We use startDate as the first period
-  // start and the same as the first due reference (no invented dates).
+  // The first installment falls ONE period (one month) after the loan
+  // start, not on the loan's end date. The engine derives every later due
+  // date by adding a month to this one. Using the end date here would make
+  // the first period span the whole loan term and vastly overstate the
+  // first period's interest.
   const firstPeriodStartDate = loanTerms.startDate;
-  const firstDueDate = loanTerms.endDate ?? loanTerms.startDate;
+  const firstDueDate = addOneMonthClamped(loanTerms.startDate);
 
   const baseInput = {
     principalCents: loanTerms.principalCents,
