@@ -268,6 +268,7 @@ function completeExceptDayCount(): LoanAuditDraftState {
       annualRatePercent: fieldValue<number>(6),
       spreadPercent: fieldUnknown<number>(),
       law128Status: fieldValue<string>('included_in_rate'),
+      law128Percent: fieldUnknown<number>("manual"),
     },
     recalculationSettingsDraft: {
       scheduleMode: fieldValue<string>('equal_principal'),

@@ -51,6 +51,7 @@ function readyDraft(): LoanAuditDraftState {
       annualRatePercent: fieldValue<number>(6),
       spreadPercent: fieldUnknown<number>(),
       law128Status: fieldValue<string>('included_in_rate'),
+      law128Percent: fieldUnknown<number>("manual"),
     },
     recalculationSettingsDraft: {
       scheduleMode: fieldValue<string>('equal_principal'),
@@ -181,7 +182,7 @@ describe('reportPreview: coexistence', () => {
 
   it('still shows «Λήψη PDF» when pdfBytes exist (test 11)', () => {
     const html = renderReport(producedResult());
-    assert.ok(html.includes('Λήψη PDF'));
+    assert.ok(html.includes('Λήψη απλού PDF'));
   });
 });
 

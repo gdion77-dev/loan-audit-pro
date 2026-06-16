@@ -53,6 +53,7 @@ function completeDraft(): LoanAuditDraftState {
       annualRatePercent: fieldValue<number>(6),
       spreadPercent: fieldUnknown<number>(),
       law128Status: fieldValue<string>('included_in_rate'),
+      law128Percent: fieldUnknown<number>("manual"),
     },
     bankScheduleDraft: {
       rows: [],

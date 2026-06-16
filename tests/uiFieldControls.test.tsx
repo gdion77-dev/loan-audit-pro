@@ -73,8 +73,8 @@ describe('uiFieldControls: section labels', () => {
     );
     assert.ok(html.includes('Κεφάλαιο αναφοράς'));
     assert.ok(html.includes('Διάρκεια (μήνες)'));
-    assert.ok(html.includes('Ημερομηνία έναρξης (ΕΕΕΕ-ΜΜ-ΗΗ)'));
-    assert.ok(html.includes('Ημερομηνία λήξης (ΕΕΕΕ-ΜΜ-ΗΗ)'));
+    assert.ok(html.includes('Ημερομηνία έναρξης (ηη/μμ/εεεε)'));
+    assert.ok(html.includes('Ημερομηνία λήξης (ηη/μμ/εεεε)'));
   });
 });
 

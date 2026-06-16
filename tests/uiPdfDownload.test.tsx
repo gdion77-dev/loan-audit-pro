@@ -63,6 +63,7 @@ function readyDraft(): LoanAuditDraftState {
       annualRatePercent: fieldValue<number>(6),
       spreadPercent: fieldUnknown<number>(),
       law128Status: fieldValue<string>('included_in_rate'),
+      law128Percent: fieldUnknown<number>("manual"),
     },
     recalculationSettingsDraft: {
       scheduleMode: fieldValue<string>('equal_principal'),
@@ -229,7 +230,7 @@ describe('pdfDownload: ReportSection UI', () => {
 
   it('shows the «Λήψη PDF» button when pdfBytes exist (test 4)', () => {
     const html = renderReport(producedResult());
-    assert.ok(html.includes('Λήψη PDF'));
+    assert.ok(html.includes('Λήψη απλού PDF'));
   });
 
   it('offers on-demand download when report text exists but no pdf bytes (browser path, test 5)', () => {
@@ -238,7 +239,7 @@ describe('pdfDownload: ReportSection UI', () => {
     const noBytes = { ...producedResult(), pdfResult: null } as LoanAuditPipelineResult;
     const html = renderReport(noBytes);
     assert.ok(html.includes('PDF: Διαθέσιμο'));
-    assert.ok(html.includes('Λήψη PDF'));
+    assert.ok(html.includes('Λήψη απλού PDF'));
   });
 
   it('still offers download when bytes are empty but report text exists', () => {
@@ -248,7 +249,7 @@ describe('pdfDownload: ReportSection UI', () => {
       pdfResult: { ...base.pdfResult, pdfBytes: new Uint8Array(0) },
     } as LoanAuditPipelineResult;
     const html = renderReport(emptyPdf);
-    assert.ok(html.includes('Λήψη PDF')); // on-demand generation from report text
+    assert.ok(html.includes('Λήψη απλού PDF')); // on-demand generation from report text
   });
 });
 

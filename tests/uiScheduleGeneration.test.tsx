@@ -45,6 +45,7 @@ function baseDraft(mode: string): LoanAuditDraftState {
       annualRatePercent: fieldValue<number>(6.1),
       spreadPercent: fieldUnknown<number>(),
       law128Status: fieldValue<string>('included_in_rate'),
+      law128Percent: fieldUnknown<number>("manual"),
     },
     recalculationSettingsDraft: {
       scheduleMode: fieldValue<string>(mode),
@@ -213,6 +214,28 @@ describe('scheduleGeneration: generation', () => {
     }
   });
 
+  it('the first due date is one month after start, not the loan end date (date fix)', () => {
+    const d = {
+      ...baseDraft('equal_installment'),
+      loanTermsDraft: {
+        principalCents: fieldValue<number>(10_000_000),
+        termMonths: fieldValue<number>(120),
+        startDate: fieldValue<string>('2024-01-01'),
+        endDate: fieldValue<string>('2034-01-01'),
+      },
+    };
+    const r = generateScheduleRows(d);
+    assert.equal(r.status, 'generated');
+    assert.equal(r.rows.length, 120);
+    // first installment falls one month after the start, NOT on 2034
+    assert.equal(r.rows[0]!.dueDate.value, '2024-02-01');
+    // first-period interest is realistic (~518 €), not a decade's worth
+    const firstInterest = r.rows[0]!.interestCents.value ?? 0;
+    assert.ok(firstInterest > 40_000 && firstInterest < 60_000); // ~51,808 cents
+    // schedule fully amortizes to zero by the final row
+    assert.equal(r.rows[119]!.balanceCents.value, 0);
+  });
+
   it('unknown values never become zero (test 12)', () => {
     // every generated money field is either a real value or unknown — and
     // for this complete fixture they are real values, not fabricated zero:
@@ -267,6 +290,7 @@ describe('scheduleGeneration: diagnostics', () => {
         annualRatePercent: fieldValue<number>(6.1),
         spreadPercent: fieldUnknown<number>(),
         law128Status: fieldValue<string>('included_in_rate'),
+        law128Percent: fieldUnknown<number>("manual"),
       },
     };
     const r = generateScheduleRows(d);
@@ -282,6 +306,7 @@ describe('scheduleGeneration: diagnostics', () => {
         annualRatePercent: fieldValue<number>(610),
         spreadPercent: fieldUnknown<number>(),
         law128Status: fieldValue<string>('included_in_rate'),
+        law128Percent: fieldUnknown<number>("manual"),
       },
     };
     const r = generateScheduleRows(d);
@@ -297,6 +322,7 @@ describe('scheduleGeneration: diagnostics', () => {
         annualRatePercent: fieldValue<number>(610),
         spreadPercent: fieldUnknown<number>(),
         law128Status: fieldValue<string>('included_in_rate'),
+        law128Percent: fieldUnknown<number>("manual"),
       },
     };
     const r = generateScheduleRows(d);
