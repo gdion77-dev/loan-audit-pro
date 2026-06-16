@@ -34,6 +34,35 @@ export interface HtmlReportResult {
   readonly message: string;
 }
 
+/**
+ * Summarize the (optional) payment reconciliation result for the report.
+ * Reads already-computed figures only — no recalculation, no new
+ * financial logic. Falls back to the original neutral note when no
+ * actual payments were entered, so the report behaves exactly as
+ * before for cases without manual payment data.
+ */
+function buildActualPaymentsNote(pipelineResult: LoanAuditPipelineResult): string {
+  const rec = pipelineResult.paymentReconciliationResult;
+  if (rec === null || rec.summary === null) {
+    return 'Δεν οριστικοποιείται με τα διαθέσιμα δεδομένα';
+  }
+  const s = rec.summary;
+  const paidCount = s.matchedPaymentCount + s.unmatchedPaymentCount;
+  const parts: string[] = [`${paidCount} καταχωρισμένες καταβολές`];
+  if (s.totalActualPaidCents !== null) {
+    parts.push(`σύνολο ${eur(s.totalActualPaidCents).toFixed(2).replace('.', ',')} €`);
+  }
+  if (s.totalDifferenceVsRecalculatedCents !== null) {
+    parts.push(
+      `διαφορά έναντι επανυπολογισμού ${eur(s.totalDifferenceVsRecalculatedCents).toFixed(2).replace('.', ',')} €`,
+    );
+  }
+  if (s.unmatchedPaymentCount > 0) {
+    parts.push(`${s.unmatchedPaymentCount} χωρίς αντιστοίχιση`);
+  }
+  return parts.join(' · ');
+}
+
 function buildReportData(
   pipelineResult: LoanAuditPipelineResult,
 ): Record<string, unknown> | null {
@@ -88,7 +117,7 @@ function buildReportData(
       rounding: 'half-up',
     },
 
-    actualPaymentsNote: 'Δεν οριστικοποιείται με τα διαθέσιμα δεδομένα',
+    actualPaymentsNote: buildActualPaymentsNote(pipelineResult),
     findings: findings.map((f) => ({
       code: f.findingId,
       severity: SEVERITY_LABEL[f.level] ?? f.level,
