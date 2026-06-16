@@ -10,6 +10,7 @@
 import React from 'react';
 import { SECTIONS } from './sectionDefinitions';
 import { moneyFromCents, formatMoneyGreek } from '../../domain/money';
+import { buildReconciliationFindings } from '../../ui-state/reconciliationFindingsAdapter';
 import type { LoanAuditPipelineResult } from '../../engines/loanAuditPipelineRunner';
 import type { TechnicalFinding } from '../../engines/findingsEngine';
 
@@ -29,6 +30,17 @@ export interface FindingsSectionProps {
 
 export const FindingsSection: React.FC<FindingsSectionProps> = ({ pipelineResult }) => {
   const findingsResult = pipelineResult?.findingsResult ?? null;
+  // Presentation-only merge: the locked findings engine only compares
+  // Τράπεζα/Fund vs Επανυπολογισμό. When the user also entered actual
+  // payments, append the (already-computed) reconciliation findings so
+  // both kinds of deviation are visible together. No recomputation.
+  const reconciliationFindings = buildReconciliationFindings(
+    pipelineResult?.paymentReconciliationResult ?? null,
+  );
+  const allFindings: readonly TechnicalFinding[] = [
+    ...(findingsResult?.findings ?? []),
+    ...reconciliationFindings,
+  ];
 
   return (
     <section className="lap-card" aria-label={def.title}>
@@ -40,13 +52,13 @@ export const FindingsSection: React.FC<FindingsSectionProps> = ({ pipelineResult
       ) : (
         <>
           <p className="lap-result-status">Κατάσταση: {findingsResult.status}</p>
-          <p className="lap-result-status">Πλήθος ευρημάτων: {findingsResult.findings.length}</p>
+          <p className="lap-result-status">Πλήθος ευρημάτων: {allFindings.length}</p>
 
-          {findingsResult.findings.length === 0 ? (
+          {allFindings.length === 0 ? (
             <p className="lap-empty-state">Δεν εντοπίστηκαν τεχνικά οικονομικά ευρήματα.</p>
           ) : (
             <ul className="lap-findings-list">
-              {findingsResult.findings.map((finding: TechnicalFinding) => (
+              {allFindings.map((finding: TechnicalFinding) => (
                 <li key={finding.findingId} className={`lap-finding lap-finding--${finding.level}`}>
                   <span className="lap-finding__id">{finding.findingId}</span>
                   <span className="lap-finding__level">{finding.level}</span>
