@@ -2,7 +2,7 @@
   "name": "loan-audit-pro",
   "version": "0.1.0",
   "private": true,
-  "description": "Loan Audit PRO — Τεχνικός Έλεγχος Κανονικών Δανείων. Step 1-A: domain model & types only. Independent project: NOT related to N.3869/2010, NOT related to AP 6/2026.",
+  "description": "Loan Audit PRO — Τεχνικός Έλεγχος Κανονικών Δανείων.",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,7 +13,9 @@
     "build": "tsc -p tsconfig.build.json"
   },
   "dependencies": {
-    "buffer": "^6.0.3"
+    "buffer": "^6.0.3",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
   },
   "devDependencies": {
     "typescript": "^6.0.3",
