@@ -207,7 +207,10 @@ describe('actualPaymentsTable: shell integrity', () => {
     const html = renderToStaticMarkup(
       React.createElement(AppShell, { initialSection: 'actual_payments', initialDraftState: state }),
     );
-    assert.ok(html.includes('2024-01-31'));
+    // The payment date is stored as ISO internally but DISPLAYED as
+    // dd/mm/yyyy (DateFieldStateControl), matching every other date
+    // field in the app.
+    assert.ok(html.includes('31/01/2024'));
     assert.ok(html.includes('Διαγραφή'));
   });
 
