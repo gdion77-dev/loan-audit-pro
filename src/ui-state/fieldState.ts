@@ -141,7 +141,8 @@ export function parseTextToField(
   source: FieldSource = 'manual',
 ): FieldState<string> {
   // Only a fully-blank string is UNKNOWN. Otherwise keep the text exactly
-  // as typed — including spaces between or after words.
+  // as typed — including spaces between or after words — so multi-word
+  // names (e.g. «ΑΦΟΙ ΑΣΛΑΝΗ ΟΕ») are preserved while typing.
   if (raw.trim() === '') return fieldUnknown<string>(source);
   return fieldValue<string>(raw, source);
 }

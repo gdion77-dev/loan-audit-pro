@@ -103,6 +103,13 @@ const HEADER_SIZE = 9;
 const FOOTER_SIZE = 7.5;
 const LEADING = 1.45;
 
+/* Brand palette (deep slate-blue accent + warm neutrals). */
+const COLOR_BRAND: RGB = { r: 0.12, g: 0.20, b: 0.38 }; // deep indigo
+const COLOR_ACCENT: RGB = { r: 0.18, g: 0.40, b: 0.62 }; // steel blue
+const COLOR_INK: RGB = { r: 0.13, g: 0.13, b: 0.15 }; // near-black body
+const COLOR_MUTED: RGB = { r: 0.42, g: 0.44, b: 0.48 }; // muted grey
+const COLOR_BAND: RGB = { r: 0.93, g: 0.95, b: 0.98 }; // pale blue band
+
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
 /* ------------------------------------------------------------------ */
@@ -345,12 +352,19 @@ interface FontEntry {
   readonly gidToUnicode: Map<number, number>;
 }
 
+interface RGB {
+  readonly r: number;
+  readonly g: number;
+  readonly b: number;
+}
+
 interface Line {
   readonly x: number;
   readonly y: number;
   readonly size: number;
   readonly fontKey: FontKey;
   readonly glyphHex: string;
+  readonly color?: RGB;
 }
 
 interface Rule {
@@ -359,11 +373,21 @@ interface Rule {
   readonly x2: number;
   readonly y2: number;
   readonly width: number;
+  readonly color?: RGB;
+}
+
+interface Rect {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+  readonly color: RGB;
 }
 
 interface PageModel {
   readonly lines: Line[];
   readonly rules: Rule[];
+  readonly rects: Rect[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -492,20 +516,27 @@ export function renderLoanAuditPdf(input: PdfRenderInput): PdfRenderResult {
   };
 
   /* --- layout ------------------------------------------------------------ */
-  const pages: PageModel[] = [{ lines: [], rules: [] }];
+  const pages: PageModel[] = [{ lines: [], rules: [], rects: [] }];
   let y = CONTENT_TOP;
   const page = (): PageModel => pages[pages.length - 1]!;
   const newPage = (): void => {
-    pages.push({ lines: [], rules: [] });
+    pages.push({ lines: [], rules: [], rects: [] });
     y = CONTENT_TOP;
   };
 
-  const put = (key: FontKey, text: string, size: number, indent = 0): void => {
+  const put = (key: FontKey, text: string, size: number, indent = 0, color?: RGB): void => {
     const lineHeight = size * LEADING;
     for (const ln of wrap(key, text, size, CONTENT_W - indent)) {
       if (y - lineHeight < CONTENT_BOTTOM) newPage();
       y -= lineHeight;
-      page().lines.push({ x: MARGIN + indent, y, size, fontKey: key, glyphHex: encode(key, ln) });
+      page().lines.push({
+        x: MARGIN + indent,
+        y,
+        size,
+        fontKey: key,
+        glyphHex: encode(key, ln),
+        ...(color ? { color } : {}),
+      });
     }
   };
 
@@ -560,18 +591,61 @@ export function renderLoanAuditPdf(input: PdfRenderInput): PdfRenderResult {
   };
 
   /* --- flow: title + sections (+ table after S07) --------------------------- */
-  put('F2', reportText.title, TITLE_SIZE);
-  gap(10);
+  // Cover-style title block: a tall accent band behind the title, the
+  // title in brand color, and a thin accent rule beneath it.
+  gap(6);
+  {
+    const bandH = TITLE_SIZE * LEADING + 22;
+    const bandTop = y;
+    page().rects.push({
+      x: MARGIN - 10,
+      y: bandTop - bandH + 6,
+      w: CONTENT_W + 20,
+      h: bandH,
+      color: COLOR_BAND,
+    });
+    // accent bar on the left edge of the band
+    page().rects.push({
+      x: MARGIN - 10,
+      y: bandTop - bandH + 6,
+      w: 4,
+      h: bandH,
+      color: COLOR_ACCENT,
+    });
+    gap(14);
+    put('F2', reportText.title, TITLE_SIZE, 6, COLOR_BRAND);
+    gap(8);
+    page().rules.push({
+      x1: MARGIN,
+      y1: y + 4,
+      x2: MARGIN + CONTENT_W,
+      y2: y + 4,
+      width: 1.2,
+      color: COLOR_ACCENT,
+    });
+  }
+  gap(14);
 
+  let sectionIndex = 0;
   for (const section of reportText.sections) {
+    sectionIndex += 1;
     if (sectionPageBreaks && page().lines.length > 0) newPage();
-    gap(9);
+    gap(11);
     if (y - HEADING_SIZE * LEADING - BODY_SIZE * LEADING < CONTENT_BOTTOM) newPage();
-    put('F2', section.title, HEADING_SIZE);
-    gap(3);
+    // section heading: small accent bar + brand-colored heading text
+    const headTop = y;
+    page().rects.push({
+      x: MARGIN,
+      y: headTop - HEADING_SIZE * LEADING + 2,
+      w: 3,
+      h: HEADING_SIZE * LEADING,
+      color: COLOR_ACCENT,
+    });
+    put('F2', section.title, HEADING_SIZE, 10, COLOR_BRAND);
+    gap(4);
     for (const paragraph of section.body.split('\n')) {
       if (paragraph.trim() === '') gap(BODY_SIZE * 0.6);
-      else put('F1', paragraph, BODY_SIZE);
+      else put('F1', paragraph, BODY_SIZE, 0, COLOR_INK);
     }
     if (section.sectionId === 'S07') {
       if (input.summaryTable !== undefined && input.summaryTable.length > 0) {
@@ -596,6 +670,7 @@ export function renderLoanAuditPdf(input: PdfRenderInput): PdfRenderResult {
       size: HEADER_SIZE,
       fontKey: 'F2',
       glyphHex: encode('F2', HEADER_BRAND),
+      color: COLOR_BRAND,
     });
     p.lines.push({
       x: MARGIN,
@@ -603,16 +678,18 @@ export function renderLoanAuditPdf(input: PdfRenderInput): PdfRenderResult {
       size: 8,
       fontKey: 'F1',
       glyphHex: encode('F1', HEADER_TITLE),
+      color: COLOR_MUTED,
     });
-    p.rules.push({ x1: MARGIN, y1: HEADER_RULE_Y, x2: PAGE_W - MARGIN, y2: HEADER_RULE_Y, width: 0.7 });
+    p.rules.push({ x1: MARGIN, y1: HEADER_RULE_Y, x2: PAGE_W - MARGIN, y2: HEADER_RULE_Y, width: 0.7, color: COLOR_ACCENT });
 
-    p.rules.push({ x1: MARGIN, y1: FOOTER_RULE_Y, x2: PAGE_W - MARGIN, y2: FOOTER_RULE_Y, width: 0.5 });
+    p.rules.push({ x1: MARGIN, y1: FOOTER_RULE_Y, x2: PAGE_W - MARGIN, y2: FOOTER_RULE_Y, width: 0.5, color: COLOR_ACCENT });
     p.lines.push({
       x: MARGIN,
       y: FOOTER_TEXT_Y,
       size: FOOTER_SIZE,
       fontKey: 'F1',
       glyphHex: encode('F1', FOOTER_DISCLAIMER),
+      color: COLOR_MUTED,
     });
     const pageLabel = `Σελίδα ${i + 1} από ${total}`;
     p.lines.push({
@@ -621,6 +698,7 @@ export function renderLoanAuditPdf(input: PdfRenderInput): PdfRenderResult {
       size: FOOTER_SIZE,
       fontKey: 'F1',
       glyphHex: encode('F1', pageLabel),
+      color: COLOR_MUTED,
     });
   });
 
@@ -744,19 +822,30 @@ function buildPdf(fonts: FontEntry[], boldAliased: boolean, pages: PageModel[]):
       `<< /Type /Page /Parent 2 0 R /MediaBox [ 0 0 ${PAGE_W} ${PAGE_H} ] ` +
         `/Resources << ${fontResources} >> /Contents ${pageNum + 1} 0 R >>`,
     );
-    const textOps = p.lines
+    const rectOps = p.rects
       .map(
-        (l) =>
-          `BT /${l.fontKey} ${l.size} Tf 1 0 0 1 ${l.x.toFixed(2)} ${l.y.toFixed(2)} Tm <${l.glyphHex}> Tj ET`,
+        (rc) =>
+          `q ${rc.color.r.toFixed(3)} ${rc.color.g.toFixed(3)} ${rc.color.b.toFixed(3)} rg ` +
+          `${rc.x.toFixed(2)} ${rc.y.toFixed(2)} ${rc.w.toFixed(2)} ${rc.h.toFixed(2)} re f Q`,
       )
+      .join('\n');
+    const textOps = p.lines
+      .map((l) => {
+        const c = l.color;
+        const fill = c ? `${c.r.toFixed(3)} ${c.g.toFixed(3)} ${c.b.toFixed(3)} rg ` : '';
+        return `q BT ${fill}/${l.fontKey} ${l.size} Tf 1 0 0 1 ${l.x.toFixed(2)} ${l.y.toFixed(2)} Tm <${l.glyphHex}> Tj ET Q`;
+      })
       .join('\n');
     const ruleOps = p.rules
-      .map(
-        (r) =>
-          `q 0.55 G ${r.width.toFixed(2)} w ${r.x1.toFixed(2)} ${r.y1.toFixed(2)} m ${r.x2.toFixed(2)} ${r.y2.toFixed(2)} l S Q`,
-      )
+      .map((r) => {
+        const c = r.color ?? { r: 0.55, g: 0.55, b: 0.55 };
+        return (
+          `q ${c.r.toFixed(3)} ${c.g.toFixed(3)} ${c.b.toFixed(3)} RG ${r.width.toFixed(2)} w ` +
+          `${r.x1.toFixed(2)} ${r.y1.toFixed(2)} m ${r.x2.toFixed(2)} ${r.y2.toFixed(2)} l S Q`
+        );
+      })
       .join('\n');
-    obj(pageNum + 1, stream('', Buffer.from(`${ruleOps}\n${textOps}`, 'latin1')));
+    obj(pageNum + 1, stream('', Buffer.from(`${rectOps}\n${ruleOps}\n${textOps}`, 'latin1')));
   });
 
   const header = Buffer.from('%PDF-1.4\n%\xb5\xb5\xb5\xb5\n', 'latin1');

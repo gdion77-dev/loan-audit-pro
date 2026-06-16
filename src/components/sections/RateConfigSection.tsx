@@ -26,7 +26,7 @@ export interface RateConfigSectionProps {
     next: FieldState<string>,
   ) => void;
   readonly onNumberChange: (
-    field: 'annualRatePercent' | 'spreadPercent',
+    field: 'annualRatePercent' | 'spreadPercent' | 'law128Percent',
     next: FieldState<number>,
   ) => void;
 }
@@ -35,7 +35,10 @@ export const RateConfigSection: React.FC<RateConfigSectionProps> = ({
   draft,
   onSelectChange,
   onNumberChange,
-}) => (
+}) => {
+  const law128AddedSeparately =
+    draft.law128Status.status === 'value' && draft.law128Status.value === 'added_separately';
+  return (
   <section className="lap-card" aria-label={def.title}>
     <h2 className="lap-card__title">{def.title}</h2>
     <p className="lap-card__explanation">{def.explanation}</p>
@@ -72,8 +75,23 @@ export const RateConfigSection: React.FC<RateConfigSectionProps> = ({
         field={draft.law128Status}
         onChange={(next) => onSelectChange('law128Status', next)}
       />
+      {law128AddedSeparately ? (
+        <NumberFieldStateControl
+          id="rate-law128Percent"
+          label="Εισφορά Ν.128/75 %"
+          field={draft.law128Percent}
+          onChange={(next) => onNumberChange('law128Percent', next)}
+          placeholder="π.χ. 0,60"
+        />
+      ) : null}
     </div>
 
     <p className="lap-card__note">{CONNECT_LATER_NOTE}</p>
+    <p className="lap-card__note">
+      Σε σταθερό επιτόκιο, το εφαρμοζόμενο επιτόκιο του δοσολογίου = σταθερό επιτόκιο
+      {' '}+ εισφορά Ν.128/75 (όταν προστίθεται χωριστά). Το περιθώριο αφορά μόνο το κυμαινόμενο
+      καθεστώς (δείκτης + περιθώριο).
+    </p>
   </section>
-);
+  );
+};

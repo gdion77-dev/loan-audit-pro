@@ -159,6 +159,7 @@ export function adaptDraftToDomain(
   const annualRatePercent = readNumber(rc.annualRatePercent);
   const spreadPercent = readNumber(rc.spreadPercent);
   const law128Code = readString(rc.law128Status);
+  const law128Percent = readNumber(rc.law128Percent);
 
   let regime: RateRegime | null = null;
   if (regimeKind === null) {
@@ -196,9 +197,14 @@ export function adaptDraftToDomain(
   } else if (law128Code === 'included_in_rate') {
     law128 = { kind: 'included_in_rate', ratePercent: null };
   } else if (law128Code === 'added_separately') {
-    // added_separately requires a numeric rate; absent here → review + unknown
-    law128 = { kind: 'unknown' };
-    review('rate_config', 'Καθεστώς εισφοράς Ν.128/75', 'Χωριστή εισφορά χωρίς ποσοστό· απαιτείται έλεγχος.');
+    // added_separately requires a numeric rate. When the user has entered
+    // the levy percent, use it; otherwise flag for review (never default).
+    if (law128Percent === null) {
+      law128 = { kind: 'unknown' };
+      review('rate_config', 'Εισφορά Ν.128/75 %', 'Χωριστή εισφορά χωρίς ποσοστό· καταχωρήστε το ποσοστό της εισφοράς.');
+    } else {
+      law128 = { kind: 'added_separately', ratePercent: law128Percent };
+    }
   } else {
     law128 = { kind: 'unknown' };
     review('rate_config', 'Καθεστώς εισφοράς Ν.128/75', 'Μη αναγνωρισμένο καθεστώς εισφοράς· απαιτείται έλεγχος.');

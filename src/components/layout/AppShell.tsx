@@ -22,6 +22,7 @@ import {
 import { downloadPdfBytes, browserDownloadEnvironment } from '../../ui-state/pdfDownload';
 import { generateScheduleRows } from '../../ui-state/scheduleGenerator';
 import { generatePdfInBrowser } from '../../ui-state/browserPdf';
+import { openHtmlReport } from '../../ui-state/htmlReport';
 import type { LoanAuditPipelineResult } from '../../engines/loanAuditPipelineRunner';
 import {
   createEmptyDraftState,
@@ -117,6 +118,17 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
     });
   };
 
+  const onOpenHtmlReport = (): void => {
+    // Opens a professionally-formatted HTML report in a new tab for the
+    // user to print to PDF. Reads stored results only; no recomputation.
+    const ok = openHtmlReport(pipelineResult);
+    if (!ok) {
+      setPdfBrowserMessage(
+        'Δεν ήταν δυνατό το άνοιγμα της αναφοράς. Επιτρέψτε τα αναδυόμενα παράθυρα και εκτελέστε πρώτα τη μελέτη.',
+      );
+    }
+  };
+
   const onCaseInfoChange = (field: keyof CaseInfoDraft, next: FieldState<string>): void => {
     setDraftState((prev) => updateDraftField(prev, 'caseInfoDraft', field, next));
   };
@@ -139,7 +151,7 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
     setDraftState((prev) => updateDraftField(prev, 'rateConfigDraft', field, next));
   };
   const onRateConfigNumberChange = (
-    field: 'annualRatePercent' | 'spreadPercent',
+    field: 'annualRatePercent' | 'spreadPercent' | 'law128Percent',
     next: FieldState<number>,
   ): void => {
     setDraftState((prev) => updateDraftField(prev, 'rateConfigDraft', field, next));
@@ -290,6 +302,7 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
           pipelineResult={pipelineResult}
           onExecute={onExecutePipeline}
           onDownloadPdf={onDownloadPdf}
+          onOpenHtmlReport={onOpenHtmlReport}
           pdfBrowserMessage={pdfBrowserMessage}
         />
       );

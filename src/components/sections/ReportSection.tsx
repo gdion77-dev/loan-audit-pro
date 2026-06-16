@@ -24,6 +24,8 @@ export interface ReportSectionProps {
   readonly pipelineResult: LoanAuditPipelineResult | null;
   readonly onExecute: () => void;
   readonly onDownloadPdf: () => void;
+  /** Opens the professional HTML report (print-to-PDF) in a new tab. */
+  readonly onOpenHtmlReport?: () => void;
   /** Optional status/error message from browser PDF generation. */
   readonly pdfBrowserMessage?: string | null;
 }
@@ -51,6 +53,7 @@ export const ReportSection: React.FC<ReportSectionProps> = ({
   pipelineResult,
   onExecute,
   onDownloadPdf,
+  onOpenHtmlReport,
   pdfBrowserMessage,
 }) => {
   const ready = draftStatus === 'ready';
@@ -107,9 +110,16 @@ export const ReportSection: React.FC<ReportSectionProps> = ({
       ) : null}
 
       {pipelineResult !== null && canDownload ? (
-        <button type="button" className="lap-btn" onClick={() => onDownloadPdf()}>
-          Λήψη PDF
-        </button>
+        <div className="lap-btn-row">
+          {onOpenHtmlReport ? (
+            <button type="button" className="lap-btn" onClick={() => onOpenHtmlReport()}>
+              Άνοιγμα επαγγελματικής αναφοράς (PDF)
+            </button>
+          ) : null}
+          <button type="button" className="lap-btn lap-btn--secondary" onClick={() => onDownloadPdf()}>
+            Λήψη απλού PDF
+          </button>
+        </div>
       ) : null}
 
       {pdfBrowserMessage != null && pdfBrowserMessage.length > 0 ? (

@@ -42,6 +42,8 @@ export interface RateConfigDraft {
   readonly annualRatePercent: FieldState<number>;
   readonly spreadPercent: FieldState<number>;
   readonly law128Status: FieldState<string>;
+  /** Ν.128/75 levy percent, used when status is 'added_separately'. */
+  readonly law128Percent: FieldState<number>;
 }
 
 export interface BankScheduleDraftRow {
@@ -117,6 +119,7 @@ export function createEmptyDraftState(): LoanAuditDraftState {
       annualRatePercent: fieldUnknown<number>('manual'),
       spreadPercent: fieldUnknown<number>('manual'),
       law128Status: fieldUnknown<string>('manual'),
+      law128Percent: fieldUnknown<number>('manual'),
     },
     bankScheduleDraft: {
       rows: [],
