@@ -287,6 +287,7 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
       return (
         <ActualPaymentsSection
           draft={draftState.actualPaymentsDraft}
+          pipelineResult={pipelineResult}
           onAddRow={onPaymentAddRow}
           onRemoveRow={onPaymentRemoveRow}
           onRowTextChange={onPaymentRowTextChange}
