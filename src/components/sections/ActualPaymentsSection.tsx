@@ -12,14 +12,19 @@
 import React from 'react';
 import { TextFieldStateControl } from '../fields/TextFieldStateControl';
 import { MoneyFieldStateControl } from '../fields/MoneyFieldStateControl';
+import { SelectFieldStateControl, type SelectOption } from '../fields/SelectFieldStateControl';
 import { SECTIONS } from './sectionDefinitions';
+import { isoToDisplay } from '../../ui-state/dateDisplay';
+import { formatMoneyGreek } from '../../domain/money';
 import type { ActualPaymentsDraft, ActualPaymentDraftRow } from '../../ui-state/loanAuditDraftState';
 import type { FieldState } from '../../ui-state/fieldState';
+import type { LoanAuditPipelineResult } from '../../engines/loanAuditPipelineRunner';
 
 const def = SECTIONS.find((s) => s.id === 'actual_payments')!;
 
 export interface ActualPaymentsSectionProps {
   readonly draft: ActualPaymentsDraft;
+  readonly pipelineResult?: LoanAuditPipelineResult | null;
   readonly onAddRow: () => void;
   readonly onRemoveRow: (index: number) => void;
   readonly onRowTextChange: (
@@ -30,19 +35,55 @@ export interface ActualPaymentsSectionProps {
   readonly onRowMoneyChange: (index: number, field: 'amountCents', next: FieldState<number>) => void;
 }
 
+/**
+ * Build dropdown options from the generated recalculation schedule so the
+ * user picks a readable «#3 · 04.10.2024 · 1.115,23 €» instead of typing an
+ * opaque internal id. The stored code stays the real row id (e.g. AI-003),
+ * so the locked reconciliation engine is unaffected. Exactly one «unknown»
+ * option represents «δεν έχει αντιστοιχιστεί».
+ */
+function buildScheduleOptions(
+  pipelineResult: ActualPaymentsSectionProps['pipelineResult'],
+): readonly SelectOption[] {
+  const rows = pipelineResult?.recalcScheduleResult?.rows ?? [];
+  const options: SelectOption[] = [
+    { code: '__unmatched__', label: '— Χωρίς αντιστοίχιση —', unknown: true },
+  ];
+  rows.forEach((row, i) => {
+    const date = row.dueDate ? isoToDisplay(row.dueDate) : '';
+    const amount = row.installment ? formatMoneyGreek(row.installment) : '';
+    const parts = [`#${i + 1}`];
+    if (date) parts.push(date);
+    if (amount) parts.push(amount);
+    options.push({ code: row.rowId, label: parts.join(' · ') });
+  });
+  return options;
+}
+
 export const ActualPaymentsSection: React.FC<ActualPaymentsSectionProps> = ({
   draft,
+  pipelineResult,
   onAddRow,
   onRemoveRow,
   onRowTextChange,
   onRowMoneyChange,
-}) => (
+}) => {
+  const scheduleOptions = buildScheduleOptions(pipelineResult);
+  const hasSchedule = scheduleOptions.length > 1;
+  return (
   <section className="lap-card" aria-label={def.title}>
     <h2 className="lap-card__title">{def.title}</h2>
     <p className="lap-card__explanation">{def.explanation}</p>
     <p className="lap-card__note">
       Χειροκίνητη καταχώριση πραγματικών καταβολών — η εισαγωγή από Excel θα προστεθεί σε επόμενο βήμα.
     </p>
+    {!hasSchedule ? (
+      <p className="lap-card__note">
+        Για να αντιστοιχίσετε μια καταβολή με συγκεκριμένη περίοδο από λίστα, εκτελέστε
+        πρώτα τον επανυπολογισμό (καρτέλα «Αναφορά» → «Εκτέλεση»). Μέχρι τότε μπορείτε να
+        καταχωρίσετε τον κωδικό γραμμής χειροκίνητα.
+      </p>
+    ) : null}
 
     <button type="button" className="lap-btn" onClick={() => onAddRow()}>
       Προσθήκη καταβολής
@@ -84,13 +125,23 @@ export const ActualPaymentsSection: React.FC<ActualPaymentsSectionProps> = ({
                   />
                 </td>
                 <td>
-                  <TextFieldStateControl
-                    id={`pay-${key}-match`}
-                    label="Αντιστοίχιση με γραμμή δοσολογίου"
-                    field={row.matchedScheduleRowId}
-                    onChange={(next) => onRowTextChange(index, 'matchedScheduleRowId', next)}
-                    placeholder="π.χ. draft-row-1"
-                  />
+                  {hasSchedule ? (
+                    <SelectFieldStateControl
+                      id={`pay-${key}-match`}
+                      label="Αντιστοίχιση με γραμμή δοσολογίου"
+                      options={scheduleOptions}
+                      field={row.matchedScheduleRowId}
+                      onChange={(next) => onRowTextChange(index, 'matchedScheduleRowId', next)}
+                    />
+                  ) : (
+                    <TextFieldStateControl
+                      id={`pay-${key}-match`}
+                      label="Αντιστοίχιση με γραμμή δοσολογίου"
+                      field={row.matchedScheduleRowId}
+                      onChange={(next) => onRowTextChange(index, 'matchedScheduleRowId', next)}
+                      placeholder="π.χ. AI-001"
+                    />
+                  )}
                 </td>
                 <td>
                   <TextFieldStateControl
@@ -116,4 +167,5 @@ export const ActualPaymentsSection: React.FC<ActualPaymentsSectionProps> = ({
       </table>
     )}
   </section>
-);
+  );
+};
