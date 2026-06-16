@@ -11,12 +11,17 @@
  */
 import React from 'react';
 import { TextFieldStateControl } from '../fields/TextFieldStateControl';
+import { DateFieldStateControl } from '../fields/DateFieldStateControl';
 import { MoneyFieldStateControl } from '../fields/MoneyFieldStateControl';
 import { SelectFieldStateControl, type SelectOption } from '../fields/SelectFieldStateControl';
 import { SECTIONS } from './sectionDefinitions';
 import { isoToDisplay } from '../../ui-state/dateDisplay';
 import { formatMoneyGreek } from '../../domain/money';
-import type { ActualPaymentsDraft, ActualPaymentDraftRow } from '../../ui-state/loanAuditDraftState';
+import type {
+  ActualPaymentsDraft,
+  ActualPaymentDraftRow,
+  BankScheduleDraft,
+} from '../../ui-state/loanAuditDraftState';
 import type { FieldState } from '../../ui-state/fieldState';
 import type { LoanAuditPipelineResult } from '../../engines/loanAuditPipelineRunner';
 
@@ -24,6 +29,7 @@ const def = SECTIONS.find((s) => s.id === 'actual_payments')!;
 
 export interface ActualPaymentsSectionProps {
   readonly draft: ActualPaymentsDraft;
+  readonly bankScheduleDraft?: BankScheduleDraft;
   readonly pipelineResult?: LoanAuditPipelineResult | null;
   readonly onAddRow: () => void;
   readonly onRemoveRow: (index: number) => void;
@@ -36,20 +42,45 @@ export interface ActualPaymentsSectionProps {
 }
 
 /**
- * Build dropdown options from the generated recalculation schedule so the
- * user picks a readable «#3 · 04.10.2024 · 1.115,23 €» instead of typing an
- * opaque internal id. The stored code stays the real row id (e.g. AI-003),
- * so the locked reconciliation engine is unaffected. Exactly one «unknown»
- * option represents «δεν έχει αντιστοιχιστεί».
+ * Build dropdown options so the user picks a readable «#3 · 04.10.2024 ·
+ * 1.115,23 €» instead of typing an opaque internal row id. The stored
+ * code stays the real row id (e.g. AI-003), so the locked reconciliation
+ * engine is unaffected. Exactly one «unknown» option represents «δεν
+ * έχει αντιστοιχιστεί».
+ *
+ * Primary source: the schedule generated in tab 4 («Παραγωγή
+ * Δοσολογίου»), available as soon as that one step is done — no need to
+ * run the full study first. Falls back to the study's own recalculated
+ * schedule for users who already executed it.
  */
 function buildScheduleOptions(
+  bankScheduleDraft: ActualPaymentsSectionProps['bankScheduleDraft'],
   pipelineResult: ActualPaymentsSectionProps['pipelineResult'],
 ): readonly SelectOption[] {
-  const rows = pipelineResult?.recalcScheduleResult?.rows ?? [];
   const options: SelectOption[] = [
     { code: '__unmatched__', label: '— Χωρίς αντιστοίχιση —', unknown: true },
   ];
-  rows.forEach((row, i) => {
+
+  const draftRows = bankScheduleDraft?.rows ?? [];
+  if (draftRows.length > 0) {
+    draftRows.forEach((row, i) => {
+      const rowId = row.rowId.value;
+      if (rowId === null) return;
+      const date = row.dueDate.value ? isoToDisplay(row.dueDate.value) : '';
+      const amount =
+        row.installmentCents.value !== null
+          ? formatMoneyGreek({ cents: row.installmentCents.value, currency: 'EUR' })
+          : '';
+      const parts = [`#${i + 1}`];
+      if (date) parts.push(date);
+      if (amount) parts.push(amount);
+      options.push({ code: rowId, label: parts.join(' · ') });
+    });
+    return options;
+  }
+
+  const recalcRows = pipelineResult?.recalcScheduleResult?.rows ?? [];
+  recalcRows.forEach((row, i) => {
     const date = row.dueDate ? isoToDisplay(row.dueDate) : '';
     const amount = row.installment ? formatMoneyGreek(row.installment) : '';
     const parts = [`#${i + 1}`];
@@ -62,13 +93,14 @@ function buildScheduleOptions(
 
 export const ActualPaymentsSection: React.FC<ActualPaymentsSectionProps> = ({
   draft,
+  bankScheduleDraft,
   pipelineResult,
   onAddRow,
   onRemoveRow,
   onRowTextChange,
   onRowMoneyChange,
 }) => {
-  const scheduleOptions = buildScheduleOptions(pipelineResult);
+  const scheduleOptions = buildScheduleOptions(bankScheduleDraft, pipelineResult);
   const hasSchedule = scheduleOptions.length > 1;
   return (
   <section className="lap-card" aria-label={def.title}>
@@ -79,9 +111,9 @@ export const ActualPaymentsSection: React.FC<ActualPaymentsSectionProps> = ({
     </p>
     {!hasSchedule ? (
       <p className="lap-card__note">
-        Για να αντιστοιχίσετε μια καταβολή με συγκεκριμένη περίοδο από λίστα, εκτελέστε
-        πρώτα τον επανυπολογισμό (καρτέλα «Αναφορά» → «Εκτέλεση»). Μέχρι τότε μπορείτε να
-        καταχωρίσετε τον κωδικό γραμμής χειροκίνητα.
+        Για να αντιστοιχίσετε μια καταβολή με συγκεκριμένη περίοδο από λίστα, παράγετε
+        πρώτα το δοσολόγιο (καρτέλα «Δοσολόγιο Τράπεζας / Fund» → «Παραγωγή Δοσολογίου»).
+        Μέχρι τότε μπορείτε να καταχωρίσετε τον κωδικό γραμμής χειροκίνητα.
       </p>
     ) : null}
 
@@ -90,7 +122,7 @@ export const ActualPaymentsSection: React.FC<ActualPaymentsSectionProps> = ({
     </button>
 
     {draft.rows.length === 0 ? (
-      <p className="lap-empty-state">Δεν έχουν καταχωρηθεί πραγματικές καταβολές.</p>
+      <p className="lap-empty-state">Δεν έχουν καταχωριστεί πραγματικές καταβολές.</p>
     ) : (
       <table className="lap-table">
         <thead>
@@ -108,12 +140,11 @@ export const ActualPaymentsSection: React.FC<ActualPaymentsSectionProps> = ({
             return (
               <tr key={key}>
                 <td>
-                  <TextFieldStateControl
+                  <DateFieldStateControl
                     id={`pay-${key}-date`}
                     label="Ημερομηνία καταβολής"
                     field={row.paymentDate}
                     onChange={(next) => onRowTextChange(index, 'paymentDate', next)}
-                    placeholder="2024-01-31"
                   />
                 </td>
                 <td>
