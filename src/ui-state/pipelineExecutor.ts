@@ -126,7 +126,17 @@ export function buildPipelineInputFromAdapter(
     scheduleMode,
     scheduleInput,
     bankRows,
-    ...(actualPayments.length > 0 ? { actualPayments } : {}),
+    ...(actualPayments.length > 0
+      ? {
+          actualPayments,
+          // The UI lets the user pick the exact schedule row from a
+          // dropdown (tab «Πραγματικές Καταβολές»), so reconciliation
+          // must use that explicit choice rather than guessing a match
+          // by due date. This changes no amount, only which matching
+          // strategy the locked engine is told to apply.
+          reconciliationOptions: { matchingMode: 'manual_match_id' as const },
+        }
+      : {}),
     reportMethodology: methodology,
     currency,
     renderText: true,
