@@ -12,6 +12,7 @@
  */
 import type { LoanAuditPipelineResult } from '../engines/loanAuditPipelineRunner';
 import { getReportTemplateHtml } from '../report-template/reportTemplate';
+import { buildReconciliationFindings } from './reconciliationFindingsAdapter';
 
 function eur(cents: number | null): number {
   return cents === null ? 0 : cents / 100;
@@ -27,12 +28,6 @@ const SEVERITY_LABEL: Record<string, string> = {
   requires_review: 'ΑΠΑΙΤΕΙΤΑΙ ΕΛΕΓΧΟΣ',
   attention: 'ΠΡΟΣΟΧΗ',
 };
-
-export interface HtmlReportResult {
-  readonly status: 'ok' | 'no_data';
-  readonly html: string;
-  readonly message: string;
-}
 
 /**
  * Summarize the (optional) payment reconciliation result for the report.
@@ -70,8 +65,16 @@ function buildReportData(
   const summary = pipelineResult.comparisonResult?.summary ?? null;
   if (caseInfo === null || summary === null) return null;
 
-  const findings = pipelineResult.findingsResult?.findings ?? [];
+  const findings = [
+    ...(pipelineResult.findingsResult?.findings ?? []),
+    ...buildReconciliationFindings(pipelineResult.paymentReconciliationResult),
+  ];
   const recalcRows = pipelineResult.recalcScheduleResult?.rows ?? [];
+  // The applied annual rate is real engine output (per recalculated row),
+  // not a re-derivation — every row in a fixed-rate schedule carries the
+  // same value, so the first row is representative.
+  const firstRow = recalcRows[0];
+  const annualRatePct = firstRow ? firstRow.appliedAnnualRatePercent : null;
 
   const amortization = recalcRows.map((r, i) => ({
     month: i + 1,
@@ -88,7 +91,7 @@ function buildReportData(
     bank: caseInfo.institution,
     contractNumber: caseInfo.contractNumber,
     principal: eur(caseInfo.principal?.cents ?? null),
-    annualRatePct: '',
+    annualRatePct: annualRatePct ?? '',
     months: caseInfo.termMonths,
     dayCount: '',
 
@@ -96,11 +99,11 @@ function buildReportData(
     missingPeriods: summary.excludedRowCount,
     deviationPeriods: summary.rowsRequiringReviewCount,
     interestDiff: eur(summary.totalInterestDifferenceCents),
-    capitalDiff: eur(summary.totalPrincipalDifferenceCents),
+    principalDiff: eur(summary.totalPrincipalDifferenceCents),
 
     bankRows: summary.comparedRowCount + summary.unmatchedBankRowCount,
     bankUnmatched: summary.unmatchedBankRowCount,
-    bankMissing: summary.excludedRowCount,
+    bankExcluded: summary.excludedRowCount,
     bankTotal: eur(summary.totalBankInstallmentsCents),
     recalcRows: summary.comparedRowCount + summary.unmatchedRecalcRowCount,
     recalcUnmatched: summary.unmatchedRecalcRowCount,
@@ -127,17 +130,28 @@ function buildReportData(
     })),
 
     missingData:
-      summary.excludedRowCount === 0
-        ? `Δεν καταγράφηκαν ελλείποντα δεδομένα στο σύνολο των ${summary.comparedRowCount} συγκρινόμενων περιόδων.`
-        : `Καταγράφηκαν ${summary.excludedRowCount} περίοδοι με ελλείποντα δεδομένα από τις ${summary.comparedRowCount} συγκρινόμενες.`,
+      pipelineResult.findingsResult?.findings.some((f) => f.level === 'missing_data')
+        ? 'Εντοπίστηκαν περιπτώσεις με ελλιπή δεδομένα στις συγκρινόμενες περιόδους.'
+        : `Δεν καταγράφηκαν ελλείποντα δεδομένα στο σύνολο των ${summary.comparedRowCount} συγκρινόμενων περιόδων.`,
     limitations:
       'Τεχνικός οικονομικός επανυπολογισμός και σύγκριση με τραπεζικά δεδομένα βάσει διαθέσιμων δεδομένων· δεν αποτελεί νομική κρίση ούτε γνωμοδότηση.',
     disclaimer:
       'Η παρούσα αποτελεί τεχνική οικονομική αποτύπωση βάσει των διαθέσιμων δεδομένων και δεν αποτελεί νομική κρίση ούτε γνωμοδότηση νομικού περιεχομένου.',
-    amortization: amortization.length > 0 ? amortization : null,
+
+    amortization,
   };
 }
 
+export interface HtmlReportResult {
+  readonly status: 'ok' | 'no_data';
+  readonly html: string;
+  readonly message?: string;
+}
+
+/**
+ * Builds the full standalone HTML report (head, styles, script and
+ * injected REPORT_DATA) ready to open in a new tab or save as a file.
+ */
 export function buildHtmlReport(
   pipelineResult: LoanAuditPipelineResult | null,
 ): HtmlReportResult {
@@ -154,20 +168,24 @@ export function buildHtmlReport(
   }
 
   const template = getReportTemplateHtml();
-  const injection = `<script>window.REPORT_DATA = ${JSON.stringify(data)};</script>`;
+  const json = JSON.stringify(data);
+  const injection = `<script>window.REPORT_DATA = ${json};</script>`;
   const html = template.replace('<!--REPORT_DATA_INJECTION-->', injection);
-
-  return { status: 'ok', html, message: 'Η αναφορά δημιουργήθηκε.' };
+  return { status: 'ok', html };
 }
 
+/**
+ * Opens the professional report in a new browser tab so the user can
+ * print it to PDF. Returns false (and does nothing) when there is no
+ * data to render.
+ */
 export function openHtmlReport(pipelineResult: LoanAuditPipelineResult | null): boolean {
-  const built = buildHtmlReport(pipelineResult);
-  if (built.status !== 'ok') return false;
-  if (typeof window === 'undefined' || typeof document === 'undefined') return false;
+  const result = buildHtmlReport(pipelineResult);
+  if (result.status !== 'ok') return false;
   const win = window.open('', '_blank');
   if (win === null) return false;
   win.document.open();
-  win.document.write(built.html);
+  win.document.write(result.html);
   win.document.close();
   return true;
 }
