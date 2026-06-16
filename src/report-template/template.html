@@ -504,7 +504,7 @@ window.REPORT_DATA = window.REPORT_DATA || {
   setF('contractShort', D.contractNumber);
   setF('principalLabel', euro(D.principal));
   setF('durationLabel', D.months + ' μήνες');
-  setF('rateLabel', D.annualRatePct + '% · ' + D.dayCount);
+  setF('rateLabel', (D.annualRatePct !== '' && D.annualRatePct != null ? D.annualRatePct + '%' : 'Βάσει δηλωμένων όρων') + (D.dayCount ? ' · ' + D.dayCount : ''));
   setF('caseLine', 'ΑΡ. ΥΠΟΘΕΣΗΣ · ' + String(D.caseNumber).toUpperCase() + ' · ' + D.preparedDate);
   setF('actualPaymentsNote', D.actualPaymentsNote);
   setF('recalcProgramShort', D.recalcProgram);
