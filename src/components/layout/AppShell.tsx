@@ -19,6 +19,7 @@ import {
   executePipelineFromDraft,
   type PipelineRunStatus,
 } from '../../ui-state/pipelineExecutor';
+import type { ActualPaymentsAmortizationResult } from '../../engines/actualPaymentsAmortizationEngine';
 import { downloadPdfBytes, browserDownloadEnvironment } from '../../ui-state/pdfDownload';
 import { generateScheduleRows } from '../../ui-state/scheduleGenerator';
 import { generatePdfInBrowser } from '../../ui-state/browserPdf';
@@ -80,6 +81,8 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
   // 'running' is transient and not surfaced here.
   const [pipelineResult, setPipelineResult] = useState<LoanAuditPipelineResult | null>(null);
   const [pipelineRunStatus, setPipelineRunStatus] = useState<PipelineRunStatus>('not_run');
+  const [actualPaymentsAmortization, setActualPaymentsAmortization] =
+    useState<ActualPaymentsAmortizationResult | null>(null);
   const [pdfBrowserMessage, setPdfBrowserMessage] = useState<string | null>(null);
 
   const onExecutePipeline = (): void => {
@@ -94,6 +97,7 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
     const outcome = executePipelineFromDraft(draftState, { renderPdf: pdfAvailable });
     setPipelineResult(outcome.result);
     setPipelineRunStatus(outcome.runStatus);
+    setActualPaymentsAmortization(outcome.actualPaymentsAmortization);
   };
 
   const onDownloadPdf = (): void => {
@@ -121,7 +125,7 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
   const onOpenHtmlReport = (): void => {
     // Opens a professionally-formatted HTML report in a new tab for the
     // user to print to PDF. Reads stored results only; no recomputation.
-    const ok = openHtmlReport(pipelineResult);
+    const ok = openHtmlReport(pipelineResult, actualPaymentsAmortization);
     if (!ok) {
       setPdfBrowserMessage(
         'Δεν ήταν δυνατό το άνοιγμα της αναφοράς. Επιτρέψτε τα αναδυόμενα παράθυρα και εκτελέστε πρώτα τη μελέτη.',
@@ -145,13 +149,13 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
     setDraftState((prev) => updateDraftField(prev, 'loanTermsDraft', field, next));
   };
   const onRateConfigSelectChange = (
-    field: 'regimeKind' | 'law128Status',
+    field: 'regimeKind' | 'law128Status' | 'capitalizeLateInterestSemiAnnually',
     next: FieldState<string>,
   ): void => {
     setDraftState((prev) => updateDraftField(prev, 'rateConfigDraft', field, next));
   };
   const onRateConfigNumberChange = (
-    field: 'annualRatePercent' | 'spreadPercent' | 'law128Percent',
+    field: 'annualRatePercent' | 'spreadPercent' | 'law128Percent' | 'lateInterestSurchargePercent',
     next: FieldState<number>,
   ): void => {
     setDraftState((prev) => updateDraftField(prev, 'rateConfigDraft', field, next));
@@ -287,6 +291,7 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
       return (
         <ActualPaymentsSection
           draft={draftState.actualPaymentsDraft}
+          bankScheduleDraft={draftState.bankScheduleDraft}
           pipelineResult={pipelineResult}
           onAddRow={onPaymentAddRow}
           onRemoveRow={onPaymentRemoveRow}
@@ -309,7 +314,12 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
       );
     }
     if (activeSection === 'comparison') {
-      return <ComparisonSection pipelineResult={pipelineResult} />;
+      return (
+        <ComparisonSection
+          pipelineResult={pipelineResult}
+          actualPaymentsAmortization={actualPaymentsAmortization}
+        />
+      );
     }
     // findings is the only remaining section
     return <FindingsSection pipelineResult={pipelineResult} />;
