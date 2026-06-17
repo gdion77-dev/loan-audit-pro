@@ -13,6 +13,11 @@ import { moneyFromCents, formatMoneyGreek } from '../../domain/money';
 import type { NullableMoney } from '../../domain/money';
 import type { LoanAuditPipelineResult } from '../../engines/loanAuditPipelineRunner';
 import type { ComparisonRow } from '../../domain/comparisonTypes';
+import type {
+  ActualPaymentsAmortizationResult,
+  ActualAmortizationRow,
+  ActualAmortizationRowStatus,
+} from '../../engines/actualPaymentsAmortizationEngine';
 
 const def = SECTIONS.find((s) => s.id === 'comparison')!;
 
@@ -21,6 +26,20 @@ const NOT_FINALIZED_SHORT = 'Δεν οριστικοποιείται';
 const SIGN_CONVENTION =
   'Η οικονομική διαφορά υπολογίζεται ως ποσό Τράπεζας/Fund μείον ποσό επανυπολογισμού.';
 const ROW_PREVIEW_LIMIT = 100;
+
+const ACTUAL_STATUS_LABEL: Record<ActualAmortizationRowStatus, string> = {
+  settled_on_time: 'Εξοφλήθηκε εμπρόθεσμα',
+  settled_late: 'Εξοφλήθηκε εκπρόθεσμα',
+  partially_settled: 'Μερική εξόφληση',
+  unsettled: 'Ανεξόφλητη',
+  requires_review: 'Απαιτείται έλεγχος',
+};
+
+/** dd.mm.yyyy display from an ISO date, mirroring htmlReport.ts. */
+function isoToGreekDate(iso: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : iso;
+}
 
 /** Signed euro display preserving the sign; null → not-finalized text. */
 function signedMoneyOrNotFinalized(cents: number | null): string {
@@ -43,9 +62,13 @@ function centsOf(money: NullableMoney): number | null {
 
 export interface ComparisonSectionProps {
   readonly pipelineResult: LoanAuditPipelineResult | null;
+  readonly actualPaymentsAmortization?: ActualPaymentsAmortizationResult | null;
 }
 
-export const ComparisonSection: React.FC<ComparisonSectionProps> = ({ pipelineResult }) => {
+export const ComparisonSection: React.FC<ComparisonSectionProps> = ({
+  pipelineResult,
+  actualPaymentsAmortization = null,
+}) => {
   const comparison = pipelineResult?.comparisonResult ?? null;
 
   return (
@@ -140,6 +163,83 @@ export const ComparisonSection: React.FC<ComparisonSectionProps> = ({ pipelineRe
               ) : null}
             </>
           )}
+        </>
+      )}
+
+      <h3 className="lap-card__subtitle">Πραγματικές Καταβολές — Παράλληλη Απομείωση</h3>
+      <p className="lap-card__explanation">
+        Παράλληλος υπολογισμός βάσει των πραγματικών ημερομηνιών και ποσών καταβολής (όχι του
+        θεωρητικού δοσολογίου). Ο καταλογισμός κάθε καταβολής γίνεται πρώτα σε ανεξόφλητο τόκο
+        (ΑΚ 423) και μόνο το υπόλοιπο μειώνει το κεφάλαιο.
+      </p>
+      {actualPaymentsAmortization === null ? (
+        <p className="lap-empty-state">
+          Δεν υπάρχει διαθέσιμος υπολογισμός — εκτελέστε τη μελέτη με τουλάχιστον μία
+          καταχωρισμένη πραγματική καταβολή.
+        </p>
+      ) : (
+        <>
+          <p className="lap-result-status">Κατάσταση: {actualPaymentsAmortization.status}</p>
+          <dl className="lap-result-grid">
+            <div className="lap-result-row">
+              <dt>Σύνολο τόκου υπερημερίας</dt>
+              <dd>{signedMoneyOrNotFinalized(actualPaymentsAmortization.totalLateInterestCents)}</dd>
+            </div>
+            <div className="lap-result-row">
+              <dt>Ανεξόφλητος τόκος (τρέχον υπόλοιπο)</dt>
+              <dd>{signedMoneyOrNotFinalized(actualPaymentsAmortization.finalUnpaidInterestCents)}</dd>
+            </div>
+            <div className="lap-result-row">
+              <dt>Πραγματικό υπόλοιπο κεφαλαίου</dt>
+              <dd>{signedMoneyOrNotFinalized(actualPaymentsAmortization.finalActualBalanceCents)}</dd>
+            </div>
+          </dl>
+
+          {actualPaymentsAmortization.rows.length === 0 ? (
+            <p className="lap-empty-state">Δεν υπάρχουν αναλυτικές γραμμές.</p>
+          ) : (
+            <table className="lap-table lap-actual-amortization-table">
+              <thead>
+                <tr>
+                  <th>Γραμμή</th>
+                  <th>Ημερομηνία λήξης</th>
+                  <th>Δόση</th>
+                  <th>Καταβλήθηκε</th>
+                  <th>Τελ. καταβολή</th>
+                  <th>Τόκος υπερημερίας</th>
+                  <th>Ημέρες</th>
+                  <th>Σε τόκους</th>
+                  <th>Σε κεφάλαιο</th>
+                  <th>Ανεξόφλητος τόκος (μεταφ.)</th>
+                  <th>Πραγματικό υπόλοιπο</th>
+                  <th>Κατάσταση</th>
+                </tr>
+              </thead>
+              <tbody>
+                {actualPaymentsAmortization.rows.slice(0, ROW_PREVIEW_LIMIT).map((row: ActualAmortizationRow) => (
+                  <tr key={row.rowId}>
+                    <td>{row.rowId}</td>
+                    <td>{isoToGreekDate(row.dueDate)}</td>
+                    <td>{signedCellOrNotFinalized(row.installmentCents)}</td>
+                    <td>{signedCellOrNotFinalized(row.paidCents)}</td>
+                    <td>{row.lastPaymentDate ? isoToGreekDate(row.lastPaymentDate) : '—'}</td>
+                    <td>{signedCellOrNotFinalized(row.lateInterestAccruedCents)}</td>
+                    <td>{row.lateDays ?? '—'}</td>
+                    <td>{signedCellOrNotFinalized(row.appliedToInterestCents)}</td>
+                    <td>{signedCellOrNotFinalized(row.appliedToPrincipalCents)}</td>
+                    <td>{signedCellOrNotFinalized(row.unpaidInterestCarryForwardCents)}</td>
+                    <td>{signedCellOrNotFinalized(row.actualClosingBalanceCents)}</td>
+                    <td>{ACTUAL_STATUS_LABEL[row.status]}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {actualPaymentsAmortization.rows.length > ROW_PREVIEW_LIMIT ? (
+            <p className="lap-report-preview__note">
+              Εμφανίζονται οι πρώτες 100 γραμμές. Το πλήρες αποτέλεσμα περιλαμβάνεται στη μελέτη.
+            </p>
+          ) : null}
         </>
       )}
     </section>
