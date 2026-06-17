@@ -223,8 +223,8 @@ export const ComparisonSection: React.FC<ComparisonSectionProps> = ({
                     <td>{signedCellOrNotFinalized(row.installmentCents)}</td>
                     <td>{signedCellOrNotFinalized(row.paidCents)}</td>
                     <td>{row.lastPaymentDate ? isoToGreekDate(row.lastPaymentDate) : '—'}</td>
-                    <td>{signedCellOrNotFinalized(row.lateInterestAccruedCents)}</td>
-                    <td>{row.lateDays ?? '—'}</td>
+                    <td>{signedCellOrNotFinalized(row.defaultInterestAccruedCents)}</td>
+                    <td>{row.defaultInterestDays ?? '—'}</td>
                     <td>{signedCellOrNotFinalized(row.appliedToInterestCents)}</td>
                     <td>{signedCellOrNotFinalized(row.appliedToPrincipalCents)}</td>
                     <td>{signedCellOrNotFinalized(row.unpaidInterestCarryForwardCents)}</td>
