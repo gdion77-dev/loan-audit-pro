@@ -44,6 +44,22 @@ export interface RateConfigDraft {
   readonly law128Status: FieldState<string>;
   /** Ν.128/75 levy percent, used when status is 'added_separately'. */
   readonly law128Percent: FieldState<number>;
+  /**
+   * Surcharge in percentage points added to the contractual rate to
+   * obtain the late-payment interest rate (τόκος υπερημερίας). NOT
+   * hard-coded anywhere as 2.5 — that figure is only the regulatory
+   * ceiling (ΠΔ/ΤΕ 2393/96), not a default. 'unknown' → no late
+   * interest is computed anywhere in the audit.
+   */
+  readonly lateInterestSurchargePercent: FieldState<number>;
+  /**
+   * Whether the case has an explicit, lawful contractual basis for
+   * semi-annual capitalization of unpaid late interest into
+   * principal (Ν.2601/1998 άρθρο 12). 'yes' | 'no'; default/unknown
+   * behaves as 'no' (capitalization never runs without an explicit
+   * 'yes' — ΑΚ 296).
+   */
+  readonly capitalizeLateInterestSemiAnnually: FieldState<string>;
 }
 
 export interface BankScheduleDraftRow {
@@ -120,6 +136,8 @@ export function createEmptyDraftState(): LoanAuditDraftState {
       spreadPercent: fieldUnknown<number>('manual'),
       law128Status: fieldUnknown<string>('manual'),
       law128Percent: fieldUnknown<number>('manual'),
+      lateInterestSurchargePercent: fieldUnknown<number>('manual'),
+      capitalizeLateInterestSemiAnnually: fieldUnknown<string>('manual'),
     },
     bankScheduleDraft: {
       rows: [],
@@ -201,6 +219,13 @@ export const REGIME_KIND_OPTIONS: readonly DraftSelectOption[] = [
 export const LAW128_STATUS_OPTIONS: readonly DraftSelectOption[] = [
   { code: 'included_in_rate', label: 'Περιλαμβάνεται στο επιτόκιο' },
   { code: 'added_separately', label: 'Προστίθεται χωριστά' },
+  { code: 'unknown', label: 'Άγνωστο / απαιτείται έλεγχος', unknown: true },
+] as const;
+
+/** Εξαμηνιαία κεφαλαιοποίηση τόκου υπερημερίας — μόνο αν προβλέπεται ρητά στη σύμβαση. */
+export const CAPITALIZE_LATE_INTEREST_OPTIONS: readonly DraftSelectOption[] = [
+  { code: 'no', label: 'Όχι — δεν προβλέπεται ρητά στη σύμβαση' },
+  { code: 'yes', label: 'Ναι — προβλέπεται ρητά στη σύμβαση (Ν.2601/1998 άρθρο 12)' },
   { code: 'unknown', label: 'Άγνωστο / απαιτείται έλεγχος', unknown: true },
 ] as const;
 
