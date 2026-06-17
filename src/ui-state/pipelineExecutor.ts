@@ -187,14 +187,6 @@ function buildAmortizationInputs(
   if (recalcRows.length === 0) return null;
   const firstRow = recalcRows[0]!;
 
-  const due: DueInstallment[] = recalcRows.map((r) => ({
-    rowId: r.rowId,
-    dueDate: r.dueDate,
-    installmentCents: r.installment.cents,
-    interestCents: r.interest.cents,
-    principalCents: r.principal.cents,
-  }));
-
   // Bridge: bank rowId -> dueDate, and dueDate -> recalc rowId.
   const bankRowIdToDueDate = new Map<string, string>();
   for (const b of adapted.bankRows) bankRowIdToDueDate.set(b.rowId, b.dueDate);
@@ -222,6 +214,20 @@ function buildAmortizationInputs(
         matchedRowId: resolvedId,
       };
     });
+
+  // A recalc row has a "recorded exception" iff at least one actual
+  // payment is matched to it. Rows without any recorded payment are
+  // treated by the engine as cleanly paid on time (no arrears).
+  const rowsWithRecordedPayment = new Set<string>(payments.map((p) => p.matchedRowId));
+
+  const due: DueInstallment[] = recalcRows.map((r) => ({
+    rowId: r.rowId,
+    dueDate: r.dueDate,
+    installmentCents: r.installment.cents,
+    interestCents: r.interest.cents,
+    principalCents: r.principal.cents,
+    hasRecordedException: rowsWithRecordedPayment.has(r.rowId),
+  }));
 
   const openingPrincipalCents = adapted.loanTerms?.principalCents ?? firstRow.openingBalance.cents;
   const dayCountConvention = adapted.rateConfig !== null ? adapted.rateConfig.dayCount : 'unknown';
