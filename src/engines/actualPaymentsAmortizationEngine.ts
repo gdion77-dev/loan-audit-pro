@@ -276,9 +276,14 @@ export function buildActualPaymentsAmortization(
   const anchorDate = dueInstallments[0]!.dueDate;
 
   let runningPrincipalCents = config.openingPrincipalCents;
-  // Arrears buckets carried across periods.
+  // Arrears buckets carried across periods. Interest is split into
+  // default (τόκος υπερημερίας) and contractual (συμβατικός τόκος)
+  // sub-buckets so ΑΚ 423 can be applied in the precise order:
+  // default interest → contractual interest → principal. Neither
+  // interest bucket ever enters the default-interest base (ΑΚ 296).
   let overduePrincipalCents = 0;
-  let unpaidInterestCents = 0; // contractual + default interest unpaid; NOT in default base
+  let carriedDefaultInterestCents = 0; // unpaid default interest carried over
+  let carriedContractualInterestCents = 0; // unpaid contractual interest carried over
   let totalDefaultInterestCents = surcharge !== null ? 0 : null;
   let anyRequiresReview = surcharge === null;
   let prevDueDate: ISODate | null = null;
@@ -287,25 +292,27 @@ export function buildActualPaymentsAmortization(
 
   for (const due of dueInstallments) {
     // --- 0. Optional semi-annual capitalization at a crossed boundary ---
+    const carriedInterestTotal = carriedDefaultInterestCents + carriedContractualInterestCents;
     if (
       capitalize &&
-      unpaidInterestCents > 0 &&
+      carriedInterestTotal > 0 &&
       crossedSemiAnnualBoundary(anchorDate, prevDueDate, due.dueDate)
     ) {
-      overduePrincipalCents += unpaidInterestCents;
+      overduePrincipalCents += carriedInterestTotal;
       auditEntries.push(
         info(
           AC.SEMIANNUAL_CAPITALIZATION_APPLIED,
-          `Εξαμηνιαία κεφαλαιοποίηση: ανεξόφλητος τόκος ${unpaidInterestCents / 100} ${currency} προστέθηκε στη βάση τόκου υπερημερίας (ληξιπρόθεσμο κεφάλαιο), βάσει ρητής συμβατικής πρόβλεψης (άρθ. 12 Ν.2601/1998).`,
+          `Εξαμηνιαία κεφαλαιοποίηση: ανεξόφλητος τόκος ${carriedInterestTotal / 100} ${currency} προστέθηκε στη βάση τόκου υπερημερίας (ληξιπρόθεσμο κεφάλαιο), βάσει ρητής συμβατικής πρόβλεψης (άρθ. 12 Ν.2601/1998).`,
         ),
       );
-      unpaidInterestCents = 0;
+      carriedDefaultInterestCents = 0;
+      carriedContractualInterestCents = 0;
     }
 
     // --- 1. Continuing default interest on outstanding overdue principal ---
     // Accrues from the previous due date (exclusive) to this due date
     // (inclusive), on principal that was already overdue coming in.
-    let carriedDefaultInterestCents = 0;
+    let periodCarriedDefaultInterestCents = 0;
     if (defaultRatePercent !== null && overduePrincipalCents > 0 && prevDueDate !== null) {
       const accrual = accrueInterestOnBase(
         overduePrincipalCents,
@@ -314,9 +321,9 @@ export function buildActualPaymentsAmortization(
         defaultRatePercent,
         config.dayCountConvention,
       );
-      carriedDefaultInterestCents = accrual.cents;
+      periodCarriedDefaultInterestCents = accrual.cents;
       if (accrual.cents > 0) {
-        unpaidInterestCents += accrual.cents;
+        carriedDefaultInterestCents += accrual.cents;
         if (totalDefaultInterestCents !== null) totalDefaultInterestCents += accrual.cents;
         auditEntries.push(...accrual.auditEntries);
         auditEntries.push(
@@ -384,38 +391,64 @@ export function buildActualPaymentsAmortization(
       }
     }
 
-    // --- 4. Build the period's obligations and apply ΑΚ 423 ---
-    // Interest obligations (in priority order): carried unpaid interest
-    // (incl. carried default interest just accrued), this period's own
-    // default interest, this period's contractual interest.
-    // Principal obligations: carried overdue principal + this period's
-    // principal portion.
+    // --- 4. ΑΚ 423 allocation in the precise 6-level order ---
+    // The payment is applied, strictly in order, to:
+    //   (1) fees/charges        — not yet modelled (always 0 here)
+    //   (2) default interest    — carried + this period's own
+    //   (3) overdue contractual interest (carried from earlier periods)
+    //   (4) current contractual interest (this period's)
+    //   (5) overdue principal   (carried from earlier periods)
+    //   (6) current principal   (this period's scheduled principal)
+    // Principal is reduced ONLY by what is actually allocated to
+    // principal (levels 5–6), never by the gross amount paid.
     const contractualInterestDue = due.interestCents;
-    const totalInterestObligation =
-      unpaidInterestCents + ownDefaultInterestCents + contractualInterestDue;
-    const totalPrincipalObligation = overduePrincipalCents + due.principalCents;
-
     let remaining = paidCents;
-    // (a) interest first (ΑΚ 423)
-    const toInterest = Math.min(remaining, totalInterestObligation);
-    remaining -= toInterest;
-    const interestStillUnpaid = totalInterestObligation - toInterest;
-    // (b) principal with the remainder
-    const toPrincipal = Math.min(remaining, totalPrincipalObligation);
-    remaining -= toPrincipal;
-    const principalStillOverdue = totalPrincipalObligation - toPrincipal;
+
+    // (2) default interest (carried + own)
+    const defaultInterestObligation =
+      carriedDefaultInterestCents + ownDefaultInterestCents;
+    const toDefaultInterest = Math.min(remaining, defaultInterestObligation);
+    remaining -= toDefaultInterest;
+    const defaultInterestStillUnpaid = defaultInterestObligation - toDefaultInterest;
+
+    // (3) overdue (carried) contractual interest
+    const toOverdueContractual = Math.min(remaining, carriedContractualInterestCents);
+    remaining -= toOverdueContractual;
+    const overdueContractualStillUnpaid = carriedContractualInterestCents - toOverdueContractual;
+
+    // (4) current contractual interest
+    const toCurrentContractual = Math.min(remaining, contractualInterestDue);
+    remaining -= toCurrentContractual;
+    const currentContractualStillUnpaid = contractualInterestDue - toCurrentContractual;
+
+    // (5) overdue (carried) principal
+    const toOverduePrincipal = Math.min(remaining, overduePrincipalCents);
+    remaining -= toOverduePrincipal;
+    const overduePrincipalStillUnpaid = overduePrincipalCents - toOverduePrincipal;
+
+    // (6) current principal
+    const toCurrentPrincipal = Math.min(remaining, due.principalCents);
+    remaining -= toCurrentPrincipal;
+    const currentPrincipalStillUnpaid = due.principalCents - toCurrentPrincipal;
+
     const overpaymentCents = remaining; // paid beyond all obligations
 
-    // Update running principal balance: principal actually reduced is
-    // the portion of THIS period's scheduled principal that got paid,
-    // plus any reduction of previously-overdue principal. Equivalent:
-    // total principal obligation minus what's still overdue, capped to
-    // not exceed this period's scheduled principal + prior overdue.
-    const principalReducedCents = totalPrincipalObligation - principalStillOverdue;
+    // Aggregates for reporting (interest vs principal split).
+    const toInterest = toDefaultInterest + toOverdueContractual + toCurrentContractual;
+    const toPrincipal = toOverduePrincipal + toCurrentPrincipal;
+
+    // Principal balance falls ONLY by what was allocated to principal.
+    const principalReducedCents = toPrincipal;
     runningPrincipalCents -= principalReducedCents;
 
-    overduePrincipalCents = principalStillOverdue;
-    unpaidInterestCents = interestStillUnpaid;
+    // Carry forward the still-unpaid sub-buckets.
+    carriedDefaultInterestCents = defaultInterestStillUnpaid;
+    carriedContractualInterestCents = overdueContractualStillUnpaid + currentContractualStillUnpaid;
+    overduePrincipalCents = overduePrincipalStillUnpaid + currentPrincipalStillUnpaid;
+
+    const interestStillUnpaid =
+      defaultInterestStillUnpaid + overdueContractualStillUnpaid + currentContractualStillUnpaid;
+    const principalStillOverdue = overduePrincipalCents;
 
     // --- 5. Audit + warnings ---
     if (interestStillUnpaid > 0) {
@@ -467,7 +500,9 @@ export function buildActualPaymentsAmortization(
     }
 
     const periodDefaultInterest =
-      defaultRatePercent === null ? null : carriedDefaultInterestCents + ownDefaultInterestCents;
+      defaultRatePercent === null
+        ? null
+        : periodCarriedDefaultInterestCents + ownDefaultInterestCents;
 
     rows.push({
       rowId: due.rowId,
@@ -481,7 +516,7 @@ export function buildActualPaymentsAmortization(
       appliedToInterestCents: toInterest,
       appliedToPrincipalCents: toPrincipal,
       overduePrincipalCents,
-      unpaidInterestCarryForwardCents: unpaidInterestCents,
+      unpaidInterestCarryForwardCents: carriedDefaultInterestCents + carriedContractualInterestCents,
       status,
       actualClosingBalanceCents: runningPrincipalCents,
     });
@@ -494,7 +529,7 @@ export function buildActualPaymentsAmortization(
     status: anyRequiresReview ? 'requires_review' : 'success',
     rows,
     totalLateInterestCents: totalDefaultInterestCents,
-    finalUnpaidInterestCents: unpaidInterestCents,
+    finalUnpaidInterestCents: carriedDefaultInterestCents + carriedContractualInterestCents,
     finalOverduePrincipalCents: overduePrincipalCents,
     finalActualBalanceCents: finalRow ? finalRow.actualClosingBalanceCents : config.openingPrincipalCents,
     auditEntries,
