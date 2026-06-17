@@ -27,6 +27,12 @@ import {
   type ScheduleMode,
 } from '../engines/loanAuditPipelineRunner';
 import type { ReportMethodologyInput } from '../engines/reportModelBuilder';
+import {
+  buildActualPaymentsAmortization,
+  type ActualPaymentsAmortizationResult,
+  type DueInstallment,
+  type ActualPaymentInput,
+} from '../engines/actualPaymentsAmortizationEngine';
 
 export type PipelineRunStatus =
   | 'not_run'
@@ -41,6 +47,14 @@ export interface PipelineExecutionOutcome {
   readonly result: LoanAuditPipelineResult | null;
   /** Greek, user-facing reason when execution is blocked or notable. */
   readonly message: string;
+  /**
+   * Parallel actual-payments amortization (ΑΚ 423 allocation order,
+   * late interest, optional semi-annual capitalization) — a
+   * presentation-only, separately computed track. null when the
+   * locked pipeline did not run, or there is no recalculated
+   * schedule to drive it.
+   */
+  readonly actualPaymentsAmortization: ActualPaymentsAmortizationResult | null;
 }
 
 /** Execution is allowed only for a fully-ready draft. */
@@ -145,6 +159,83 @@ export function buildPipelineInputFromAdapter(
 }
 
 /**
+ * Builds inputs for the actual-payments amortization engine from the
+ * already-computed pipeline result (theoretical schedule) and the
+ * adapter's actual payments / loan terms. Returns null when there is
+ * no recalculated schedule to drive it (nothing to compute against).
+ *
+ * IMPORTANT: actual payments are matched by the user against BANK
+ * schedule row IDs (e.g. "b1"), via the dropdown in «Πραγματικές
+ * Καταβολές». The amortization track, however, is driven by the
+ * RECALCULATED schedule rows (e.g. "EP-003"), which have their own,
+ * independent row IDs. The bridge between the two — exactly as the
+ * locked paymentReconciliationEngine.ts already does — is the shared
+ * dueDate: a payment matched to bank row "b1" is re-matched here to
+ * whichever recalculated row shares "b1"'s due date.
+ */
+function buildAmortizationInputs(
+  result: LoanAuditPipelineResult,
+  adapted: DraftToDomainResult,
+): {
+  readonly due: readonly DueInstallment[];
+  readonly payments: readonly ActualPaymentInput[];
+  readonly openingPrincipalCents: number;
+  readonly contractualAnnualRatePercent: number;
+  readonly dayCountConvention: LoanAuditPipelineInput['scheduleInput']['dayCountConvention'];
+} | null {
+  const recalcRows = result.recalcScheduleResult?.rows ?? [];
+  if (recalcRows.length === 0) return null;
+  const firstRow = recalcRows[0]!;
+
+  const due: DueInstallment[] = recalcRows.map((r) => ({
+    rowId: r.rowId,
+    dueDate: r.dueDate,
+    installmentCents: r.installment.cents,
+    interestCents: r.interest.cents,
+    principalCents: r.principal.cents,
+  }));
+
+  // Bridge: bank rowId -> dueDate, and dueDate -> recalc rowId.
+  const bankRowIdToDueDate = new Map<string, string>();
+  for (const b of adapted.bankRows) bankRowIdToDueDate.set(b.rowId, b.dueDate);
+  const dueDateToRecalcRowId = new Map<string, string>();
+  for (const r of recalcRows) {
+    if (!dueDateToRecalcRowId.has(r.dueDate)) dueDateToRecalcRowId.set(r.dueDate, r.rowId);
+  }
+
+  const payments: ActualPaymentInput[] = adapted.actualPayments
+    .filter((p) => p.matchedScheduleRowId !== null)
+    .map((p) => {
+      const targetId = p.matchedScheduleRowId as string;
+      // Bridge via due date when the target is a bank rowId; if it's
+      // already a recalc rowId (or unresolvable), pass it through
+      // unchanged — the engine itself reports any non-matching ID.
+      const bridgedDueDate = bankRowIdToDueDate.get(targetId);
+      const resolvedId =
+        bridgedDueDate !== undefined
+          ? dueDateToRecalcRowId.get(bridgedDueDate) ?? targetId
+          : targetId;
+      return {
+        paymentId: p.paymentId,
+        paymentDate: p.date,
+        amountCents: p.amount.cents,
+        matchedRowId: resolvedId,
+      };
+    });
+
+  const openingPrincipalCents = adapted.loanTerms?.principalCents ?? firstRow.openingBalance.cents;
+  const dayCountConvention = adapted.rateConfig !== null ? adapted.rateConfig.dayCount : 'unknown';
+
+  return {
+    due,
+    payments,
+    openingPrincipalCents,
+    contractualAnnualRatePercent: firstRow.appliedAnnualRatePercent,
+    dayCountConvention,
+  };
+}
+
+/**
  * Controlled execution from a draft. Re-validates, gates on 'ready',
  * builds a safe input and runs the locked pipeline. Returns a blocked
  * outcome (no pipeline call) when not ready or when input can't be
@@ -164,6 +255,7 @@ export function executePipelineFromDraft(
       runStatus: summary.status === 'missing_data' ? 'missing_data' : 'requires_review',
       result: null,
       message: 'Η μελέτη δεν μπορεί να εκτελεστεί ακόμη. Συμπληρώστε ή ελέγξτε τα ελλείποντα δεδομένα.',
+      actualPaymentsAmortization: null,
     };
   }
 
@@ -173,10 +265,35 @@ export function executePipelineFromDraft(
       runStatus: 'missing_data',
       result: null,
       message: 'Δεν είναι δυνατή η ασφαλής κατάρτιση εισόδου μελέτης με τα διαθέσιμα δεδομένα.',
+      actualPaymentsAmortization: null,
     };
   }
 
   const result = runLoanAuditPipeline(input);
+
+  // Second, separate step: the actual-payments amortization track.
+  // Pure presentation/analysis layer on top of the locked result —
+  // never feeds back into it. Only runs when there are actual
+  // payments to drive it; otherwise null (nothing to show).
+  let actualPaymentsAmortization: ActualPaymentsAmortizationResult | null = null;
+  if (adapted.actualPayments.length > 0) {
+    const amortInputs = buildAmortizationInputs(result, adapted);
+    if (amortInputs !== null) {
+      const surchargeField = draft.rateConfigDraft.lateInterestSurchargePercent;
+      const capitalizeField = draft.rateConfigDraft.capitalizeLateInterestSemiAnnually;
+      actualPaymentsAmortization = buildActualPaymentsAmortization(amortInputs.due, amortInputs.payments, {
+        openingPrincipalCents: amortInputs.openingPrincipalCents,
+        contractualAnnualRatePercent: amortInputs.contractualAnnualRatePercent,
+        dayCountConvention: amortInputs.dayCountConvention,
+        lateInterestSurchargePercent:
+          surchargeField.status === 'value' ? surchargeField.value : null,
+        capitalizeLateInterestSemiAnnually:
+          capitalizeField.status === 'value' && capitalizeField.value === 'yes',
+        currency,
+      });
+    }
+  }
+
   return {
     runStatus: result.status,
     result,
@@ -184,5 +301,6 @@ export function executePipelineFromDraft(
       result.status === 'success'
         ? 'Η μελέτη εκτελέστηκε με επιτυχία.'
         : 'Η μελέτη εκτελέστηκε· ορισμένα σημεία απαιτούν έλεγχο.',
+    actualPaymentsAmortization,
   };
 }
