@@ -2,76 +2,72 @@
  * Loan Audit PRO — src/engines/actualPaymentsAmortizationEngine.ts
  * ------------------------------------------------------------------
  * Builds a PARALLEL amortization track driven by the debtor's ACTUAL
- * payments (dates and amounts), separate from the theoretical
- * recalculated schedule (equalInstallmentScheduleEngine.ts, LOCKED —
- * not modified by this file). For each contractual due date it
- * determines what was actually settled, accrues late-payment interest
- * (τόκος υπερημερίας) when declared for the case, and allocates each
- * actual payment in the legally mandated order.
+ * payments, separate from the theoretical recalculated schedule
+ * (equalInstallmentScheduleEngine.ts, LOCKED — not modified here).
  *
- * LEGAL / METHODOLOGY NOTES (confirmed with the user 2026-06-16,
- * including a second confirmed round on the payment-allocation order
- * — none of this is hard-coded as a universal default value, only
- * the ALLOCATION ORDER is a fixed legal rule):
+ * KEY MODELLING PRINCIPLE (confirmed with the user 2026-06-16):
+ * Each due installment is, BY DEFAULT, assumed paid normally (its
+ * exact amount, exactly on its due date) UNLESS the caller marks it
+ * as having an explicit recorded exception (`hasRecordedException`).
+ * The UI records ONLY the deviations (smaller amount, and/or late
+ * date, and/or an explicit zero meaning "not paid"); everything else
+ * is treated as a clean, on-time payment that reduces principal
+ * normally and produces no arrears. This matches how an auditor
+ * actually works: list the exceptions, assume the rest is regular.
  *
- *   1. PAYMENT ALLOCATION ORDER — ΑΚ 423 (mandatory, not configurable):
- *      Each actual payment is allocated, in this fixed order:
- *        a) accumulated unpaid interest carried over from earlier
- *           periods (oldest first — ΑΚ 422, oldest contractual
- *           interest before later default interest),
- *        b) the current period's late-payment interest, if any,
- *        c) the current period's own contractual interest,
- *        d) only the remainder reduces PRINCIPAL.
- *      The debtor cannot unilaterally redirect a payment to principal
- *      ahead of interest; this engine never lets it happen either.
+ * LEGAL / METHODOLOGY (all confirmed, including a researched round on
+ * the default-interest base):
  *
- *   2. LATE INTEREST BASIS — Άρθρο 345 ΑΚ:
- *      Accrues only on the outstanding (unpaid) portion of an overdue
- *      installment — never on the portion already paid, never on the
- *      loan's total outstanding principal. (Exception not modelled
- *      here: a validly terminated/accelerated contract makes the
- *      full remaining balance due — out of scope unless requested.)
+ *   1. PAYMENT ALLOCATION ORDER — ΑΚ 423 (mandatory, fixed):
+ *      (a) carried-over unpaid DEFAULT interest, (b) carried-over
+ *      unpaid CONTRACTUAL interest (oldest first — ΑΚ 422),
+ *      (c) this period's contractual interest, (d) overdue PRINCIPAL,
+ *      (e) only the remainder reduces current principal. The debtor
+ *      cannot redirect a payment to principal ahead of interest.
  *
- *   3. LATE INTEREST RATE:
+ *   2. DEFAULT-INTEREST BASE — Άρθρο 345 ΑΚ + ΑΚ 296 (CRITICAL):
+ *      Default (late) interest accrues ONLY on overdue unpaid
+ *      PRINCIPAL (plus any interest that has been LAWFULLY
+ *      capitalized). It NEVER accrues on unpaid regular interest or
+ *      on unpaid default interest — doing so would be ανατοκισμός,
+ *      forbidden without an explicit, lawful clause (ΑΚ 296). Unpaid
+ *      interest is held as a separate claim and only enters the
+ *      default-interest base if/when capitalized.
+ *
+ *   3. CONTINUING ACCRUAL:
+ *      Overdue principal keeps accruing default interest every period
+ *      it remains unpaid (not only for the single period of its own
+ *      installment), day-counted across each period, until settled.
+ *
+ *   4. DEFAULT-INTEREST RATE:
  *      Contractual annual rate + a surcharge in percentage points.
- *      The surcharge is NEVER hard-coded (2.5 points is a REGULATORY
- *      CEILING under ΠΔ/ΤΕ 2393/96, not a default), so it must be
- *      supplied per case (lateInterestSurchargePercent). null = not
- *      declared → no late interest is computed; affected rows are
- *      flagged requires_review rather than silently assuming 0 or the
- *      ceiling value.
- *
- *   4. UNPAID INTEREST NEVER SILENTLY BECOMES PRINCIPAL — ΑΚ 296 /
- *      Ν.2601/1998 άρθρο 12:
- *      Interest (contractual or late) left unpaid after allocation
- *      stays an outstanding INTEREST claim, carried forward to the
- *      next period; it is never added to principal as it accrues.
+ *      The surcharge is NEVER hard-coded (2.5 points is the ΠΔ/ΤΕ
+ *      2393/96 regulatory CEILING, not a default). null = not
+ *      declared → no default interest is computed; rows that have
+ *      overdue principal are flagged requires_review.
  *
  *   5. SEMI-ANNUAL CAPITALIZATION (ανατοκισμός) — NOT automatic:
- *      Only when capitalizeLateInterestSemiAnnually=true is supplied
- *      (an explicit, lawful, case-specific contractual basis is the
- *      caller's responsibility to establish), the accumulated unpaid
- *      interest carried into a six-monthly boundary is folded into
- *      principal at that boundary, exactly once per elapsed 6-month
- *      block, starting from the first due date in the schedule.
- *      Without this flag, capitalization never happens, per ΑΚ 296.
+ *      Only when capitalizeLateInterestSemiAnnually=true (an explicit,
+ *      lawful, case-specific contractual basis — Ν.2601/1998 άρθρο
+ *      12) does accumulated unpaid interest fold into the
+ *      default-interest base, once per elapsed 6-month block from the
+ *      first due date. Without it, capitalization never happens
+ *      (ΑΚ 296), and a warning is emitted whenever unpaid interest
+ *      exists but is (correctly) excluded from the default base.
  *
  * Scope guards:
- *   - Independent of Ν.3869/2010 and ΑΠ 6/2026; no logic copied.
- *   - Does NOT modify equalInstallmentScheduleEngine.ts,
- *     interestAccrualEngine.ts, dayCountEngine.ts, rateEngine.ts, or
- *     paymentReconciliationEngine.ts. Reuses calculateDayCount
- *     (read-only call) for date arithmetic; reimplements the same
- *     documented formula (balance × rate/100 × fractionOfYear,
- *     half-up cents rounding) for late interest only.
- *   - Null discipline preserved: a missing input is null, never
- *     coerced to zero. An explicit zero payment is data.
+ *   - Independent of Ν.3869/2010 and ΑΠ 6/2026.
+ *   - Modifies no locked engine. Reuses calculateDayCount (read-only)
+ *     for date math; reimplements the documented interest formula
+ *     (base × rate/100 × fractionOfYear, half-up cents) locally.
+ *   - Null discipline: missing input is null, never coerced to zero;
+ *     an explicit zero payment is data ("not paid").
  *   - Neutral wording only; no legal-conclusion language.
  */
 import type { ISODate } from '../domain/dateTypes';
 import type { CurrencyCode } from '../domain/money';
 import type { AuditEntry } from '../domain/auditTypes';
-import { info, requiresReview } from '../domain/auditFactories';
+import { info, requiresReview, warning } from '../domain/auditFactories';
 import { calculateDayCount } from './dayCountEngine';
 import type { DayCountConvention } from '../domain/dateTypes';
 
@@ -80,8 +76,9 @@ import type { DayCountConvention } from '../domain/dateTypes';
 /* ------------------------------------------------------------------ */
 
 export const ACTUAL_PAYMENTS_AMORTIZATION_AUDIT_CODES = {
-  LATE_INTEREST_ACCRUED: 'LATE_INTEREST_ACCRUED',
-  LATE_INTEREST_SURCHARGE_MISSING: 'LATE_INTEREST_SURCHARGE_MISSING',
+  DEFAULT_INTEREST_ACCRUED: 'DEFAULT_INTEREST_ACCRUED',
+  DEFAULT_INTEREST_SURCHARGE_MISSING: 'DEFAULT_INTEREST_SURCHARGE_MISSING',
+  UNPAID_INTEREST_EXCLUDED_FROM_BASE: 'UNPAID_INTEREST_EXCLUDED_FROM_BASE',
   INTEREST_UNDERPAID_CARRIED_FORWARD: 'INTEREST_UNDERPAID_CARRIED_FORWARD',
   PAYMENT_ALLOCATED: 'PAYMENT_ALLOCATED',
   INSTALLMENT_OVERPAID: 'INSTALLMENT_OVERPAID',
@@ -103,6 +100,13 @@ export interface DueInstallment {
   readonly interestCents: number;
   /** Theoretical contractual principal for this period — read-only reference. */
   readonly principalCents: number;
+  /**
+   * Whether the user recorded an explicit actual-payment exception
+   * for this installment. false → assume a clean, on-time, full
+   * payment (no arrears). true → use the recorded payment(s), which
+   * may be smaller, late, or an explicit zero (not paid).
+   */
+  readonly hasRecordedException: boolean;
 }
 
 /** One actual payment made by the debtor. */
@@ -120,9 +124,9 @@ export interface ActualPaymentsAmortizationConfig {
   readonly dayCountConvention: DayCountConvention;
   /**
    * Surcharge in percentage points added to the contractual rate to
-   * obtain the late-interest rate. null = not declared for this case
-   * → no late interest is accrued (rows flagged requires_review,
-   * never a silent assumption of 0 or the regulatory ceiling).
+   * obtain the default-interest rate. null = not declared → no
+   * default interest is computed; rows with overdue principal are
+   * flagged requires_review (never a silent 0 or ceiling value).
    */
   readonly lateInterestSurchargePercent: number | null;
   /** Default false — see methodology note 5 above. */
@@ -146,17 +150,20 @@ export interface ActualAmortizationRow {
   readonly dueDate: ISODate;
   readonly installmentCents: number;
   readonly contractualInterestCents: number;
-  /** Sum of actual payments allocated against this row's due date, in order received. */
+  /** Sum of actual payments allocated against this installment. */
   readonly paidCents: number;
   readonly lastPaymentDate: ISODate | null;
-  /** Late interest accrued for THIS period's overdue portion (not the carried-forward balance). */
-  readonly lateInterestAccruedCents: number | null;
-  readonly lateDays: number | null;
-  /** Portion of the payment(s) allocated to interest (carried-forward + late + current), per ΑΚ 423. */
+  /** Default interest accrued during THIS period on outstanding overdue principal. */
+  readonly defaultInterestAccruedCents: number | null;
+  /** Days the overdue principal accrued default interest in this period. */
+  readonly defaultInterestDays: number | null;
+  /** Portion of payment(s) allocated to interest (default + contractual), per ΑΚ 423. */
   readonly appliedToInterestCents: number;
-  /** Portion of the payment(s) allocated to principal — only the remainder after interest. */
+  /** Portion of payment(s) allocated to principal. */
   readonly appliedToPrincipalCents: number;
-  /** Outstanding (unpaid) interest carried forward into the NEXT period — never added to principal here. */
+  /** Outstanding overdue PRINCIPAL carried into the next period (default-interest base). */
+  readonly overduePrincipalCents: number;
+  /** Outstanding unpaid INTEREST (contractual + default) carried forward — NOT in the default base. */
   readonly unpaidInterestCarryForwardCents: number;
   readonly status: ActualAmortizationRowStatus;
   /** Real (actual-payment-driven) closing PRINCIPAL balance after this row. */
@@ -167,8 +174,10 @@ export interface ActualPaymentsAmortizationResult {
   readonly status: 'success' | 'requires_review' | 'missing_data';
   readonly rows: readonly ActualAmortizationRow[];
   readonly totalLateInterestCents: number | null;
-  /** Unpaid interest still outstanding after the last row (not folded into principal unless capitalized). */
+  /** Unpaid interest still outstanding after the last row. */
   readonly finalUnpaidInterestCents: number;
+  /** Overdue principal still outstanding after the last row. */
+  readonly finalOverduePrincipalCents: number;
   readonly finalActualBalanceCents: number | null;
   readonly auditEntries: readonly AuditEntry[];
 }
@@ -181,7 +190,7 @@ function roundHalfUpCents(rawCents: number): number {
   return Math.sign(rawCents) * Math.round(Math.abs(rawCents));
 }
 
-/** Interest on a given base, for the days between two dates (start excluded, end included). */
+/** Interest on a base for the days between two dates (start excluded, end included). */
 function accrueInterestOnBase(
   baseCents: number,
   fromExclusive: ISODate,
@@ -198,25 +207,26 @@ function accrueInterestOnBase(
   return { cents: roundHalfUpCents(raw), days: dc.days, auditEntries: [...dc.auditEntries] };
 }
 
-/** 6-month boundaries from `anchor`, up to and including `upTo`. */
-function sixMonthBoundariesUpTo(anchor: ISODate, upTo: ISODate): ISODate[] {
-  const boundaries: ISODate[] = [];
+/** Whether `boundary` (a 6-month multiple from anchor) falls within (prevDue, dueDate]. */
+function crossedSemiAnnualBoundary(
+  anchor: ISODate,
+  prevDue: ISODate | null,
+  dueDate: ISODate,
+): boolean {
   const [ay, am, ad] = anchor.split('-').map(Number) as [number, number, number];
   let y = ay;
-  let m = am;
-  let step = 0;
-  while (step < 240) {
-    m += 6;
-    while (m > 12) {
-      m -= 12;
+  let mo = am;
+  for (let step = 0; step < 240; step++) {
+    mo += 6;
+    while (mo > 12) {
+      mo -= 12;
       y += 1;
     }
-    const candidate = `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(ad).padStart(2, '0')}` as ISODate;
-    if (candidate > upTo) break;
-    boundaries.push(candidate);
-    step += 1;
+    const boundary = `${String(y).padStart(4, '0')}-${String(mo).padStart(2, '0')}-${String(ad).padStart(2, '0')}`;
+    if (boundary > dueDate) return false;
+    if ((prevDue === null || boundary > prevDue) && boundary <= dueDate) return true;
   }
-  return boundaries;
+  return false;
 }
 
 /* ------------------------------------------------------------------ */
@@ -224,12 +234,11 @@ function sixMonthBoundariesUpTo(anchor: ISODate, upTo: ISODate): ISODate[] {
 /* ------------------------------------------------------------------ */
 
 /**
- * Builds the actual-payment-driven amortization track applying the
- * ΑΚ 423 allocation order (unpaid interest carry-forward, then this
- * period's late interest, then this period's contractual interest,
- * then principal). Pure function: no mutation of inputs, no I/O. Rows
- * are produced in the order of `dueInstallments` (caller is
- * responsible for chronological order).
+ * Builds the actual-payment-driven amortization track with bucketed
+ * arrears (overdue principal vs unpaid interest), continuing default
+ * interest on overdue principal only, and ΑΚ 423 allocation. Pure
+ * function. Rows follow the order of `dueInstallments` (caller must
+ * pass them chronologically).
  */
 export function buildActualPaymentsAmortization(
   dueInstallments: readonly DueInstallment[],
@@ -245,142 +254,220 @@ export function buildActualPaymentsAmortization(
       rows: [],
       totalLateInterestCents: null,
       finalUnpaidInterestCents: 0,
+      finalOverduePrincipalCents: 0,
       finalActualBalanceCents: null,
       auditEntries,
     };
   }
 
   const surcharge = config.lateInterestSurchargePercent;
+  const defaultRatePercent =
+    surcharge !== null ? config.contractualAnnualRatePercent + surcharge : null;
   if (surcharge === null) {
     auditEntries.push(
       requiresReview(
-        AC.LATE_INTEREST_SURCHARGE_MISSING,
-        'Δεν έχει δηλωθεί προσαύξηση τόκου υπερημερίας για την υπόθεση· δεν υπολογίζεται τόκος υπερημερίας (παραμένει null, δεν τεκμαίρεται μηδέν ή το ανώτατο νόμιμο όριο).',
+        AC.DEFAULT_INTEREST_SURCHARGE_MISSING,
+        'Δεν έχει δηλωθεί προσαύξηση τόκου υπερημερίας· δεν υπολογίζεται τόκος υπερημερίας (παραμένει null, δεν τεκμαίρεται μηδέν ή το ανώτατο νόμιμο όριο).',
       ),
     );
   }
-  const lateRatePercent =
-    surcharge !== null ? config.contractualAnnualRatePercent + surcharge : null;
 
-  let runningPrincipalCents = config.openingPrincipalCents;
-  let unpaidInterestCarryForwardCents = 0;
-  let totalLateInterestCents = surcharge !== null ? 0 : null;
-  let anyRequiresReview = surcharge === null;
   const capitalize = config.capitalizeLateInterestSemiAnnually === true;
   const anchorDate = dueInstallments[0]!.dueDate;
-  const appliedBoundaries = new Set<string>();
+
+  let runningPrincipalCents = config.openingPrincipalCents;
+  // Arrears buckets carried across periods.
+  let overduePrincipalCents = 0;
+  let unpaidInterestCents = 0; // contractual + default interest unpaid; NOT in default base
+  let totalDefaultInterestCents = surcharge !== null ? 0 : null;
+  let anyRequiresReview = surcharge === null;
+  let prevDueDate: ISODate | null = null;
 
   const rows: ActualAmortizationRow[] = [];
 
   for (const due of dueInstallments) {
+    // --- 0. Optional semi-annual capitalization at a crossed boundary ---
+    if (
+      capitalize &&
+      unpaidInterestCents > 0 &&
+      crossedSemiAnnualBoundary(anchorDate, prevDueDate, due.dueDate)
+    ) {
+      overduePrincipalCents += unpaidInterestCents;
+      auditEntries.push(
+        info(
+          AC.SEMIANNUAL_CAPITALIZATION_APPLIED,
+          `Εξαμηνιαία κεφαλαιοποίηση: ανεξόφλητος τόκος ${unpaidInterestCents / 100} ${currency} προστέθηκε στη βάση τόκου υπερημερίας (ληξιπρόθεσμο κεφάλαιο), βάσει ρητής συμβατικής πρόβλεψης (άρθ. 12 Ν.2601/1998).`,
+        ),
+      );
+      unpaidInterestCents = 0;
+    }
+
+    // --- 1. Continuing default interest on outstanding overdue principal ---
+    // Accrues from the previous due date (exclusive) to this due date
+    // (inclusive), on principal that was already overdue coming in.
+    let carriedDefaultInterestCents = 0;
+    if (defaultRatePercent !== null && overduePrincipalCents > 0 && prevDueDate !== null) {
+      const accrual = accrueInterestOnBase(
+        overduePrincipalCents,
+        prevDueDate,
+        due.dueDate,
+        defaultRatePercent,
+        config.dayCountConvention,
+      );
+      carriedDefaultInterestCents = accrual.cents;
+      if (accrual.cents > 0) {
+        unpaidInterestCents += accrual.cents;
+        if (totalDefaultInterestCents !== null) totalDefaultInterestCents += accrual.cents;
+        auditEntries.push(...accrual.auditEntries);
+        auditEntries.push(
+          info(
+            AC.DEFAULT_INTEREST_ACCRUED,
+            `Δόση ${due.rowId}: τόκος υπερημερίας ${accrual.cents / 100} ${currency} για ${accrual.days ?? '—'} ημέρες επί ληξιπρόθεσμου κεφαλαίου ${overduePrincipalCents / 100} ${currency} (επιτόκιο ${defaultRatePercent}%).`,
+          ),
+        );
+      }
+    }
+
+    // --- 2. Determine this installment's actual payment behaviour ---
+    // Default (no recorded exception): treat as a clean, on-time, full
+    // payment — covers this period's contractual interest and its full
+    // theoretical principal, reduces principal normally, no arrears.
     const payments = actualPayments
       .filter((p) => p.matchedRowId === due.rowId)
       .slice()
       .sort((a, b) => a.paymentDate.localeCompare(b.paymentDate));
 
-    const paidCents = payments.reduce((sum, p) => sum + p.amountCents, 0);
-    const lastPaymentDate = payments.length > 0 ? payments[payments.length - 1]!.paymentDate : null;
-
-    // --- 1. Late interest for THIS period's overdue portion --------
-    let lateInterestAccruedCents: number | null = null;
-    let lateDays: number | null = null;
-    const overdueBase = Math.max(0, due.installmentCents - paidCents);
-    const wasEverLate = lastPaymentDate !== null && lastPaymentDate > due.dueDate;
-
-    if ((overdueBase > 0 || wasEverLate) && lateRatePercent !== null) {
-      const toDate = lastPaymentDate;
-      if (toDate !== null && toDate > due.dueDate) {
-        const lateBase = paidCents >= due.installmentCents ? due.installmentCents : overdueBase;
-        const accrual = accrueInterestOnBase(
-          lateBase,
-          due.dueDate,
-          toDate,
-          lateRatePercent,
-          config.dayCountConvention,
-        );
-        lateInterestAccruedCents = accrual.cents;
-        lateDays = accrual.days;
-        auditEntries.push(...accrual.auditEntries);
-        if (accrual.cents > 0) {
-          auditEntries.push(
-            info(
-              AC.LATE_INTEREST_ACCRUED,
-              `Δόση ${due.rowId}: τόκος υπερημερίας ${accrual.cents / 100} ${currency} για ${accrual.days ?? '—'} ημέρες επί ${lateBase / 100} ${currency} (επιτόκιο ${lateRatePercent}%).`,
-            ),
-          );
-        }
-        if (totalLateInterestCents !== null) totalLateInterestCents += accrual.cents;
-      } else if (toDate === null && overdueBase > 0) {
-        anyRequiresReview = true;
-      }
-    } else if (overdueBase > 0 && lateRatePercent === null) {
-      anyRequiresReview = true;
+    let paidCents: number;
+    let lastPaymentDate: ISODate | null;
+    if (!due.hasRecordedException) {
+      paidCents = due.installmentCents;
+      lastPaymentDate = due.dueDate;
+    } else {
+      paidCents = payments.reduce((sum, p) => sum + p.amountCents, 0);
+      lastPaymentDate = payments.length > 0 ? payments[payments.length - 1]!.paymentDate : null;
     }
 
-    // --- 2. ΑΚ 423 allocation of this period's actual payment(s) ----
+    // --- 3. Default interest for THIS period's own late settlement ---
+    // If the installment is settled late, its own overdue amount also
+    // accrues default interest from its due date to the payment date.
+    let ownDefaultInterestCents = 0;
+    let ownDefaultDays: number | null = null;
+    const paidLate = lastPaymentDate !== null && lastPaymentDate > due.dueDate;
+    // Own-period late interest applies only when an actual (non-zero)
+    // settlement happened after the due date. A zero payment dated at
+    // month-end is merely a "not paid" marker, not a late settlement —
+    // its overdue principal accrues CONTINUING default interest in the
+    // following periods instead (step 1), never here.
+    if (defaultRatePercent !== null && paidLate && paidCents > 0 && lastPaymentDate !== null) {
+      // Base: this installment's own principal portion, overdue from
+      // its due date to the (late) payment date. Interest is excluded
+      // from the base (ΑΚ 296).
+      const baseForOwn = due.principalCents;
+      const accrual = accrueInterestOnBase(
+        baseForOwn,
+        due.dueDate,
+        lastPaymentDate,
+        defaultRatePercent,
+        config.dayCountConvention,
+      );
+      ownDefaultInterestCents = accrual.cents;
+      ownDefaultDays = accrual.days;
+      if (accrual.cents > 0) {
+        if (totalDefaultInterestCents !== null) totalDefaultInterestCents += accrual.cents;
+        auditEntries.push(...accrual.auditEntries);
+        auditEntries.push(
+          info(
+            AC.DEFAULT_INTEREST_ACCRUED,
+            `Δόση ${due.rowId}: τόκος υπερημερίας ${accrual.cents / 100} ${currency} για ${accrual.days ?? '—'} ημέρες (εκπρόθεσμη εξόφληση δόσης) επί κεφαλαίου ${baseForOwn / 100} ${currency}.`,
+          ),
+        );
+      }
+    }
+
+    // --- 4. Build the period's obligations and apply ΑΚ 423 ---
+    // Interest obligations (in priority order): carried unpaid interest
+    // (incl. carried default interest just accrued), this period's own
+    // default interest, this period's contractual interest.
+    // Principal obligations: carried overdue principal + this period's
+    // principal portion.
+    const contractualInterestDue = due.interestCents;
+    const totalInterestObligation =
+      unpaidInterestCents + ownDefaultInterestCents + contractualInterestDue;
+    const totalPrincipalObligation = overduePrincipalCents + due.principalCents;
+
     let remaining = paidCents;
-    let appliedToInterestCents = 0;
+    // (a) interest first (ΑΚ 423)
+    const toInterest = Math.min(remaining, totalInterestObligation);
+    remaining -= toInterest;
+    const interestStillUnpaid = totalInterestObligation - toInterest;
+    // (b) principal with the remainder
+    const toPrincipal = Math.min(remaining, totalPrincipalObligation);
+    remaining -= toPrincipal;
+    const principalStillOverdue = totalPrincipalObligation - toPrincipal;
+    const overpaymentCents = remaining; // paid beyond all obligations
 
-    const carryDue = unpaidInterestCarryForwardCents;
-    const fromCarry = Math.min(remaining, carryDue);
-    remaining -= fromCarry;
-    appliedToInterestCents += fromCarry;
-    unpaidInterestCarryForwardCents -= fromCarry;
+    // Update running principal balance: principal actually reduced is
+    // the portion of THIS period's scheduled principal that got paid,
+    // plus any reduction of previously-overdue principal. Equivalent:
+    // total principal obligation minus what's still overdue, capped to
+    // not exceed this period's scheduled principal + prior overdue.
+    const principalReducedCents = totalPrincipalObligation - principalStillOverdue;
+    runningPrincipalCents -= principalReducedCents;
 
-    const lateDue = lateInterestAccruedCents ?? 0;
-    const fromLate = Math.min(remaining, lateDue);
-    remaining -= fromLate;
-    appliedToInterestCents += fromLate;
-    const unpaidLateThisPeriod = lateDue - fromLate;
+    overduePrincipalCents = principalStillOverdue;
+    unpaidInterestCents = interestStillUnpaid;
 
-    const contractualDue = due.interestCents;
-    const fromContractual = Math.min(remaining, contractualDue);
-    remaining -= fromContractual;
-    appliedToInterestCents += fromContractual;
-    const unpaidContractualThisPeriod = contractualDue - fromContractual;
-
-    const appliedToPrincipalCents = remaining;
-    unpaidInterestCarryForwardCents += unpaidLateThisPeriod + unpaidContractualThisPeriod;
-
-    if (unpaidLateThisPeriod > 0 || unpaidContractualThisPeriod > 0) {
+    // --- 5. Audit + warnings ---
+    if (interestStillUnpaid > 0) {
       auditEntries.push(
         info(
           AC.INTEREST_UNDERPAID_CARRIED_FORWARD,
-          `Δόση ${due.rowId}: ανεξόφλητος τόκος ${(unpaidLateThisPeriod + unpaidContractualThisPeriod) / 100} ${currency} μεταφέρεται ως οφειλόμενος τόκος στην επόμενη περίοδο (ΑΚ 423/296) — δεν προστίθεται στο κεφάλαιο.`,
+          `Δόση ${due.rowId}: ανεξόφλητος τόκος ${interestStillUnpaid / 100} ${currency} μεταφέρεται ως ξεχωριστή απαίτηση (ΑΚ 423/296) — δεν προστίθεται στο κεφάλαιο ούτε στη βάση τόκου υπερημερίας.`,
         ),
       );
+      if (!capitalize) {
+        auditEntries.push(
+          warning(
+            AC.UNPAID_INTEREST_EXCLUDED_FROM_BASE,
+            'Οι ανεξόφλητοι τόκοι δεν προστέθηκαν στη βάση τόκου υπερημερίας, επειδή δεν έχει ενεργοποιηθεί τεκμηριωμένος κανόνας ανατοκισμού (ΑΚ 296).',
+          ),
+        );
+      }
     }
     auditEntries.push(
       info(
         AC.PAYMENT_ALLOCATED,
-        `Δόση ${due.rowId}: καταβολή ${paidCents / 100} ${currency} καταλογίστηκε — τόκοι ${appliedToInterestCents / 100} ${currency}, κεφάλαιο ${appliedToPrincipalCents / 100} ${currency} (ΑΚ 423).`,
+        `Δόση ${due.rowId}: καταβολή ${paidCents / 100} ${currency} — σε τόκους ${toInterest / 100} ${currency}, σε κεφάλαιο ${toPrincipal / 100} ${currency} (ΑΚ 423).`,
       ),
     );
-
-    runningPrincipalCents -= appliedToPrincipalCents;
-
-    if (appliedToPrincipalCents > due.principalCents) {
+    if (overpaymentCents > 0) {
       auditEntries.push(
         info(
           AC.INSTALLMENT_OVERPAID,
-          `Δόση ${due.rowId}: υπερκάλυψη ${(appliedToPrincipalCents - due.principalCents) / 100} ${currency} έναντι του θεωρητικού κεφαλαίου της δόσης, μετά τον καταλογισμό τόκων.`,
+          `Δόση ${due.rowId}: υπερκάλυψη ${overpaymentCents / 100} ${currency} έναντι των συνολικών οφειλών της περιόδου.`,
         ),
       );
     }
+    if (principalStillOverdue > 0 && defaultRatePercent === null) {
+      anyRequiresReview = true;
+    }
 
-    // --- 3. Status ----------------------------------------------------
+    // --- 6. Status ---
     let status: ActualAmortizationRowStatus;
-    const fullySettled = overdueBase === 0 && unpaidLateThisPeriod === 0 && unpaidContractualThisPeriod === 0;
-    if (fullySettled) {
-      status = wasEverLate ? 'settled_late' : 'settled_on_time';
-    } else if (paidCents === 0 && lastPaymentDate === null) {
+    const settledThisPeriod = interestStillUnpaid === 0 && principalStillOverdue === 0;
+    if (settledThisPeriod) {
+      status = paidLate ? 'settled_late' : 'settled_on_time';
+    } else if (due.hasRecordedException && paidCents === 0) {
       status = 'unsettled';
     } else {
       status = 'partially_settled';
     }
-    if ((overdueBase > 0 && lateRatePercent === null) || (overdueBase > 0 && lastPaymentDate === null)) {
+    if (principalStillOverdue > 0 && defaultRatePercent === null) {
       status = 'requires_review';
     }
+
+    const periodDefaultInterest =
+      defaultRatePercent === null ? null : carriedDefaultInterestCents + ownDefaultInterestCents;
 
     rows.push({
       rowId: due.rowId,
@@ -389,46 +476,26 @@ export function buildActualPaymentsAmortization(
       contractualInterestCents: due.interestCents,
       paidCents,
       lastPaymentDate,
-      lateInterestAccruedCents,
-      lateDays,
-      appliedToInterestCents,
-      appliedToPrincipalCents,
-      unpaidInterestCarryForwardCents,
+      defaultInterestAccruedCents: periodDefaultInterest,
+      defaultInterestDays: ownDefaultDays,
+      appliedToInterestCents: toInterest,
+      appliedToPrincipalCents: toPrincipal,
+      overduePrincipalCents,
+      unpaidInterestCarryForwardCents: unpaidInterestCents,
       status,
       actualClosingBalanceCents: runningPrincipalCents,
     });
 
-    // --- 4. Optional semi-annual capitalization (ΑΚ 296 exception) ---
-    if (capitalize) {
-      for (const boundary of sixMonthBoundariesUpTo(anchorDate, due.dueDate)) {
-        if (appliedBoundaries.has(boundary)) continue;
-        appliedBoundaries.add(boundary);
-        if (unpaidInterestCarryForwardCents > 0) {
-          const capitalized = unpaidInterestCarryForwardCents;
-          runningPrincipalCents += capitalized;
-          unpaidInterestCarryForwardCents = 0;
-          auditEntries.push(
-            info(
-              AC.SEMIANNUAL_CAPITALIZATION_APPLIED,
-              `Εξαμηνιαία κεφαλαιοποίηση (${boundary}): ανεξόφλητος τόκος ${capitalized / 100} ${currency} προστέθηκε στο κεφάλαιο, βάσει ρητής συμβατικής πρόβλεψης ανατοκισμού (άρθ. 12 Ν.2601/1998).`,
-            ),
-          );
-          rows[rows.length - 1] = {
-            ...rows[rows.length - 1]!,
-            actualClosingBalanceCents: runningPrincipalCents,
-            unpaidInterestCarryForwardCents,
-          };
-        }
-      }
-    }
+    prevDueDate = due.dueDate;
   }
 
   const finalRow = rows[rows.length - 1];
   return {
     status: anyRequiresReview ? 'requires_review' : 'success',
     rows,
-    totalLateInterestCents,
-    finalUnpaidInterestCents: unpaidInterestCarryForwardCents,
+    totalLateInterestCents: totalDefaultInterestCents,
+    finalUnpaidInterestCents: unpaidInterestCents,
+    finalOverduePrincipalCents: overduePrincipalCents,
     finalActualBalanceCents: finalRow ? finalRow.actualClosingBalanceCents : config.openingPrincipalCents,
     auditEntries,
   };
