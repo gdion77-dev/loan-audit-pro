@@ -11,8 +11,47 @@
  * The HTML opens in a new tab; the user prints it to PDF.
  */
 import type { LoanAuditPipelineResult } from '../engines/loanAuditPipelineRunner';
+import type { ActualPaymentsAmortizationResult } from '../engines/actualPaymentsAmortizationEngine';
 import { getReportTemplateHtml } from '../report-template/reportTemplate';
 import { buildReconciliationFindings } from './reconciliationFindingsAdapter';
+
+const ACTUAL_STATUS_LABEL: Record<string, string> = {
+  settled_on_time: 'Εξοφλήθηκε εμπρόθεσμα',
+  settled_late: 'Εξοφλήθηκε εκπρόθεσμα',
+  partially_settled: 'Μερική εξόφληση',
+  unsettled: 'Ανεξόφλητη',
+  requires_review: 'Απαιτείται έλεγχος',
+};
+
+/**
+ * Maps the actual-payments amortization result (cents) into the
+ * template's `actualAmortization` shape (euro values). Presentation
+ * only — no recomputation. Returns null when there is nothing to show.
+ */
+function buildActualAmortizationData(
+  amort: ActualPaymentsAmortizationResult | null | undefined,
+): Record<string, unknown> | null {
+  if (!amort || amort.rows.length === 0) return null;
+  return {
+    totalLateInterest: amort.totalLateInterestCents === null ? null : eur(amort.totalLateInterestCents),
+    finalUnpaidInterest: eur(amort.finalUnpaidInterestCents),
+    finalOverduePrincipal: eur(amort.finalOverduePrincipalCents),
+    finalActualBalance: amort.finalActualBalanceCents === null ? null : eur(amort.finalActualBalanceCents),
+    rows: amort.rows.map((r) => ({
+      date: isoToGreek(r.dueDate),
+      installment: eur(r.installmentCents),
+      paid: eur(r.paidCents),
+      defaultInterest: r.defaultInterestAccruedCents === null ? null : eur(r.defaultInterestAccruedCents),
+      toInterest: eur(r.appliedToInterestCents),
+      toPrincipal: eur(r.appliedToPrincipalCents),
+      overduePrincipal: eur(r.overduePrincipalCents),
+      unpaidInterest: eur(r.unpaidInterestCarryForwardCents),
+      balance: eur(r.actualClosingBalanceCents),
+      status: r.status,
+      statusLabel: ACTUAL_STATUS_LABEL[r.status] ?? r.status,
+    })),
+  };
+}
 
 function eur(cents: number | null): number {
   return cents === null ? 0 : cents / 100;
@@ -66,6 +105,7 @@ function buildActualPaymentsNote(pipelineResult: LoanAuditPipelineResult): strin
 
 function buildReportData(
   pipelineResult: LoanAuditPipelineResult,
+  actualPaymentsAmortization?: ActualPaymentsAmortizationResult | null,
 ): Record<string, unknown> | null {
   const caseInfo = pipelineResult.reportModelResult?.reportModel?.caseInfo ?? null;
   const summary = pipelineResult.comparisonResult?.summary ?? null;
@@ -144,21 +184,18 @@ function buildReportData(
     disclaimer:
       'Η παρούσα αποτελεί τεχνική οικονομική αποτύπωση βάσει των διαθέσιμων δεδομένων και δεν αποτελεί νομική κρίση ούτε γνωμοδότηση νομικού περιεχομένου.',
     amortization: amortization.length > 0 ? amortization : null,
+    actualAmortization: buildActualAmortizationData(actualPaymentsAmortization),
   };
 }
 
 export function buildHtmlReport(
   pipelineResult: LoanAuditPipelineResult | null,
-  // Accepted for forward-compatibility with the on-screen Σύγκριση
-  // table; not yet rendered into the PDF template (deferred by
-  // explicit user decision — screen first, PDF as a separate step).
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _actualPaymentsAmortization?: unknown,
+  actualPaymentsAmortization?: ActualPaymentsAmortizationResult | null,
 ): HtmlReportResult {
   if (pipelineResult === null) {
     return { status: 'no_data', html: '', message: 'Δεν υπάρχουν διαθέσιμα δεδομένα μελέτης.' };
   }
-  const data = buildReportData(pipelineResult);
+  const data = buildReportData(pipelineResult, actualPaymentsAmortization);
   if (data === null) {
     return {
       status: 'no_data',
@@ -176,7 +213,7 @@ export function buildHtmlReport(
 
 export function openHtmlReport(
   pipelineResult: LoanAuditPipelineResult | null,
-  actualPaymentsAmortization?: unknown,
+  actualPaymentsAmortization?: ActualPaymentsAmortizationResult | null,
 ): boolean {
   const built = buildHtmlReport(pipelineResult, actualPaymentsAmortization);
   if (built.status !== 'ok') return false;
