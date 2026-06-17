@@ -45,6 +45,7 @@ export const APP_STYLES = `
 .lap-card__title { margin: 0 0 6px; font-size: 18px; }
 .lap-card__explanation { margin: 0 0 14px; font-size: 13px; color: #424245; }
 .lap-card__note { margin: 14px 0 0; font-size: 12px; color: #6e6e73; font-style: italic; }
+.lap-card__subtitle { margin: 22px 0 4px; font-size: 14px; font-weight: 600; color: #1d1d1f; }
 .lap-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; margin: 6px 0 4px; }
 .lap-field { display: flex; flex-direction: column; gap: 4px; }
 .lap-field__label { font-size: 12px; color: #424245; }
