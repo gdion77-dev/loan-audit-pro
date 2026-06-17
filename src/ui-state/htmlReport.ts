@@ -29,6 +29,12 @@ const SEVERITY_LABEL: Record<string, string> = {
   attention: 'ΠΡΟΣΟΧΗ',
 };
 
+export interface HtmlReportResult {
+  readonly status: 'ok' | 'no_data';
+  readonly html: string;
+  readonly message: string;
+}
+
 /**
  * Summarize the (optional) payment reconciliation result for the report.
  * Reads already-computed figures only — no recalculation, no new
@@ -99,11 +105,11 @@ function buildReportData(
     missingPeriods: summary.excludedRowCount,
     deviationPeriods: summary.rowsRequiringReviewCount,
     interestDiff: eur(summary.totalInterestDifferenceCents),
-    principalDiff: eur(summary.totalPrincipalDifferenceCents),
+    capitalDiff: eur(summary.totalPrincipalDifferenceCents),
 
     bankRows: summary.comparedRowCount + summary.unmatchedBankRowCount,
     bankUnmatched: summary.unmatchedBankRowCount,
-    bankExcluded: summary.excludedRowCount,
+    bankMissing: summary.excludedRowCount,
     bankTotal: eur(summary.totalBankInstallmentsCents),
     recalcRows: summary.comparedRowCount + summary.unmatchedRecalcRowCount,
     recalcUnmatched: summary.unmatchedRecalcRowCount,
@@ -130,30 +136,24 @@ function buildReportData(
     })),
 
     missingData:
-      pipelineResult.findingsResult?.findings.some((f) => f.level === 'missing_data')
-        ? 'Εντοπίστηκαν περιπτώσεις με ελλιπή δεδομένα στις συγκρινόμενες περιόδους.'
-        : `Δεν καταγράφηκαν ελλείποντα δεδομένα στο σύνολο των ${summary.comparedRowCount} συγκρινόμενων περιόδων.`,
+      summary.excludedRowCount === 0
+        ? `Δεν καταγράφηκαν ελλείποντα δεδομένα στο σύνολο των ${summary.comparedRowCount} συγκρινόμενων περιόδων.`
+        : `Καταγράφηκαν ${summary.excludedRowCount} περίοδοι με ελλείποντα δεδομένα από τις ${summary.comparedRowCount} συγκρινόμενες.`,
     limitations:
       'Τεχνικός οικονομικός επανυπολογισμός και σύγκριση με τραπεζικά δεδομένα βάσει διαθέσιμων δεδομένων· δεν αποτελεί νομική κρίση ούτε γνωμοδότηση.',
     disclaimer:
       'Η παρούσα αποτελεί τεχνική οικονομική αποτύπωση βάσει των διαθέσιμων δεδομένων και δεν αποτελεί νομική κρίση ούτε γνωμοδότηση νομικού περιεχομένου.',
-
-    amortization,
+    amortization: amortization.length > 0 ? amortization : null,
   };
 }
 
-export interface HtmlReportResult {
-  readonly status: 'ok' | 'no_data';
-  readonly html: string;
-  readonly message?: string;
-}
-
-/**
- * Builds the full standalone HTML report (head, styles, script and
- * injected REPORT_DATA) ready to open in a new tab or save as a file.
- */
 export function buildHtmlReport(
   pipelineResult: LoanAuditPipelineResult | null,
+  // Accepted for forward-compatibility with the on-screen Σύγκριση
+  // table; not yet rendered into the PDF template (deferred by
+  // explicit user decision — screen first, PDF as a separate step).
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _actualPaymentsAmortization?: unknown,
 ): HtmlReportResult {
   if (pipelineResult === null) {
     return { status: 'no_data', html: '', message: 'Δεν υπάρχουν διαθέσιμα δεδομένα μελέτης.' };
@@ -168,24 +168,23 @@ export function buildHtmlReport(
   }
 
   const template = getReportTemplateHtml();
-  const json = JSON.stringify(data);
-  const injection = `<script>window.REPORT_DATA = ${json};</script>`;
+  const injection = `<script>window.REPORT_DATA = ${JSON.stringify(data)};</script>`;
   const html = template.replace('<!--REPORT_DATA_INJECTION-->', injection);
-  return { status: 'ok', html };
+
+  return { status: 'ok', html, message: 'Η αναφορά δημιουργήθηκε.' };
 }
 
-/**
- * Opens the professional report in a new browser tab so the user can
- * print it to PDF. Returns false (and does nothing) when there is no
- * data to render.
- */
-export function openHtmlReport(pipelineResult: LoanAuditPipelineResult | null): boolean {
-  const result = buildHtmlReport(pipelineResult);
-  if (result.status !== 'ok') return false;
+export function openHtmlReport(
+  pipelineResult: LoanAuditPipelineResult | null,
+  actualPaymentsAmortization?: unknown,
+): boolean {
+  const built = buildHtmlReport(pipelineResult, actualPaymentsAmortization);
+  if (built.status !== 'ok') return false;
+  if (typeof window === 'undefined' || typeof document === 'undefined') return false;
   const win = window.open('', '_blank');
   if (win === null) return false;
   win.document.open();
-  win.document.write(result.html);
+  win.document.write(built.html);
   win.document.close();
   return true;
 }
