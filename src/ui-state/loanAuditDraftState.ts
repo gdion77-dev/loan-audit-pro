@@ -76,6 +76,33 @@ export interface RateConfigDraft {
   readonly floatingIndexType: FieldState<string>;
   readonly rateSourceRule: FieldState<string>;
   readonly businessDaysBeforeReset: FieldState<number>;
+  /**
+   * Index observations LOCKED into the case (reviewed & confirmed by the
+   * user). These are plain input data, not editable form fields. When
+   * present they feed the floating rateHistory deterministically, giving
+   * the study a stable, traceable record of which values were used —
+   * independent of any later change to the live ECB series.
+   * Empty array = nothing locked yet.
+   */
+  readonly floatingRateObservations: readonly FloatingRateObservation[];
+  /** Provenance of the locked observations (for the report). */
+  readonly floatingRateLock: FloatingRateLockMeta | null;
+}
+
+/** A single locked index observation: ISO date + value in percent. */
+export interface FloatingRateObservation {
+  readonly date: string;
+  readonly valuePercent: number;
+}
+
+/** Metadata describing how/when the observations were locked. */
+export interface FloatingRateLockMeta {
+  readonly source: 'ecb_api' | 'manual';
+  readonly indexCode: string;
+  /** ISO timestamp when the lock was performed. */
+  readonly lockedAt: string;
+  /** ISO date of the last published observation in the locked set. */
+  readonly lastPublishedDate: string | null;
 }
 
 export interface BankScheduleDraftRow {
@@ -157,6 +184,8 @@ export function createEmptyDraftState(): LoanAuditDraftState {
       floatingIndexType: fieldUnknown<string>('manual'),
       rateSourceRule: fieldUnknown<string>('manual'),
       businessDaysBeforeReset: fieldUnknown<number>('manual'),
+      floatingRateObservations: [],
+      floatingRateLock: null,
     },
     bankScheduleDraft: {
       rows: [],
