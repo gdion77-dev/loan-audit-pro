@@ -30,6 +30,7 @@ import { isValidISODate, isDayCountConvention, type ISODate, type DayCountConven
 import type { CaseInfo } from '../domain/loanTypes';
 import type { RateConfig, RateRegime, Law128Status, FloatingIndexType } from '../domain/rateTypes';
 import { isFloatingIndexType } from '../domain/rateTypes';
+import { buildContinuousRateHistory, type RateSourceRule } from './floatingRateResolver';
 import type { BankScheduleRow } from '../domain/scheduleTypes';
 import type { ActualPayment } from '../domain/paymentTypes';
 
@@ -75,6 +76,20 @@ export interface DraftToDomainResult {
   readonly recalculationSettings: PreparedRecalculationSettings | null;
   readonly missingData: readonly DraftIssue[];
   readonly warnings: readonly DraftIssue[];
+  /**
+   * Floating-rate provenance for the report (present only when a
+   * floating rateHistory was resolved from locked observations).
+   */
+  readonly floatingRateProjection: FloatingRateProjectionInfo | null;
+}
+
+export interface FloatingRateProjectionInfo {
+  readonly indexType: string;
+  readonly sourceRule: string | null;
+  readonly negativeIndexPolicy: 'floor_zero';
+  readonly projectedCount: number;
+  readonly lastPublishedDate: string | null;
+  readonly lastPublishedValuePercent: number | null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -267,8 +282,9 @@ export function adaptDraftToDomain(
     review('bank_schedule', 'Σύμβαση ημερομέτρησης', 'Μη αναγνωρισμένη σύμβαση ημερομέτρησης· απαιτείται έλεγχος.');
   }
 
-  const rateConfig: RateConfig | null =
+  let rateConfig: RateConfig | null =
     regime !== null && law128 !== null ? { regime, law128, dayCount: dayCountConvention } : null;
+  let floatingRateProjection: FloatingRateProjectionInfo | null = null;
 
   /* --- bank schedule rows ----------------------------------------------- */
   const bankRows: BankScheduleRow[] = [];
@@ -309,6 +325,71 @@ export function adaptDraftToDomain(
       sourceConfidence: 'manual_entry',
     });
   });
+
+  /* --- floating rateHistory from locked observations -------------------- */
+  // When the regime is floating and the user has locked index values,
+  // resolve a per-installment rateHistory using the contract rule and the
+  // known due dates. Future installments reuse the last published value
+  // (flagged), and negative values are floored to zero.
+  if (
+    rateConfig !== null &&
+    rateConfig.regime.kind === 'floating' &&
+    rc.floatingRateObservations.length > 0
+  ) {
+    const ruleCode = (readString(rc.rateSourceRule) ?? 'unknown') as RateSourceRule;
+    const source = rc.floatingRateLock?.source === 'manual' ? 'user_input' : 'public_index';
+
+    // Continuous history covers EVERY due date (including theoretical
+    // schedule dates we never enumerated). Each monthly observation
+    // becomes a period; the first extends back and the last extends far
+    // forward, so future installments use the last published value.
+    const continuous = buildContinuousRateHistory(rc.floatingRateObservations, source);
+
+    const enrichedRegime: RateRegime = {
+      ...rateConfig.regime,
+      rateHistory: continuous.periods,
+    };
+    rateConfig = { ...rateConfig, regime: enrichedRegime };
+
+    // Count how many KNOWN bank-row due dates fall after the last
+    // published observation (those are projected). When there are no
+    // bank rows, projection is still disclosed generically in the report.
+    const lastPub = continuous.lastPublishedDate;
+    let projectedCount = 0;
+    if (lastPub !== null) {
+      const lastPubDay = /^\d{4}-\d{2}$/.test(lastPub) ? `${lastPub}-01` : lastPub;
+      projectedCount = bankRows.filter(
+        (r) => typeof r.dueDate === 'string' && isValidISODate(r.dueDate) && r.dueDate > lastPubDay,
+      ).length;
+    }
+
+    floatingRateProjection = {
+      indexType: rateConfig.regime.kind === 'floating' ? rateConfig.regime.indexType : 'other',
+      sourceRule: ruleCode === 'unknown' ? null : ruleCode,
+      negativeIndexPolicy: 'floor_zero',
+      projectedCount,
+      lastPublishedDate: continuous.lastPublishedDate,
+      lastPublishedValuePercent: continuous.lastPublishedValuePercent,
+    };
+
+    if (projectedCount > 0) {
+      warn(
+        'rate_config',
+        'Μελλοντικές δόσεις',
+        `Για ${projectedCount} μελλοντικές δόσεις χρησιμοποιήθηκε η τελευταία δημοσιευμένη τιμή δείκτη (${continuous.lastPublishedValuePercent}% της ${continuous.lastPublishedDate}). Επισημαίνεται στη μελέτη.`,
+      );
+    }
+  } else if (
+    rateConfig !== null &&
+    rateConfig.regime.kind === 'floating' &&
+    rc.floatingRateObservations.length === 0
+  ) {
+    review(
+      'rate_config',
+      'Τιμές δείκτη',
+      'Κυμαινόμενο καθεστώς χωρίς κλειδωμένες τιμές δείκτη· αντλήστε/καταχωρήστε και κλειδώστε τιμές για οριστικό υπολογισμό.',
+    );
+  }
 
   /* --- actual payments rows --------------------------------------------- */
   const actualPayments: ActualPayment[] = [];
@@ -412,5 +493,6 @@ export function adaptDraftToDomain(
     recalculationSettings,
     missingData,
     warnings,
+    floatingRateProjection,
   };
 }
