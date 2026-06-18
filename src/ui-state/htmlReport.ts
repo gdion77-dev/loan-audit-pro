@@ -106,6 +106,7 @@ function buildActualPaymentsNote(pipelineResult: LoanAuditPipelineResult): strin
 function buildReportData(
   pipelineResult: LoanAuditPipelineResult,
   actualPaymentsAmortization?: ActualPaymentsAmortizationResult | null,
+  rateLabel?: string,
 ): Record<string, unknown> | null {
   const caseInfo = pipelineResult.reportModelResult?.reportModel?.caseInfo ?? null;
   const summary = pipelineResult.comparisonResult?.summary ?? null;
@@ -138,6 +139,7 @@ function buildReportData(
     contractNumber: caseInfo.contractNumber,
     principal: eur(caseInfo.principal?.cents ?? null),
     annualRatePct: annualRatePct ?? '',
+    rateLabel: rateLabel ?? null,
     months: caseInfo.termMonths,
     dayCount: '',
 
@@ -191,11 +193,12 @@ function buildReportData(
 export function buildHtmlReport(
   pipelineResult: LoanAuditPipelineResult | null,
   actualPaymentsAmortization?: ActualPaymentsAmortizationResult | null,
+  rateLabel?: string,
 ): HtmlReportResult {
   if (pipelineResult === null) {
     return { status: 'no_data', html: '', message: 'Δεν υπάρχουν διαθέσιμα δεδομένα μελέτης.' };
   }
-  const data = buildReportData(pipelineResult, actualPaymentsAmortization);
+  const data = buildReportData(pipelineResult, actualPaymentsAmortization, rateLabel);
   if (data === null) {
     return {
       status: 'no_data',
@@ -214,8 +217,9 @@ export function buildHtmlReport(
 export function openHtmlReport(
   pipelineResult: LoanAuditPipelineResult | null,
   actualPaymentsAmortization?: ActualPaymentsAmortizationResult | null,
+  rateLabel?: string,
 ): boolean {
-  const built = buildHtmlReport(pipelineResult, actualPaymentsAmortization);
+  const built = buildHtmlReport(pipelineResult, actualPaymentsAmortization, rateLabel);
   if (built.status !== 'ok') return false;
   if (typeof window === 'undefined' || typeof document === 'undefined') return false;
   const win = window.open('', '_blank');
