@@ -61,9 +61,11 @@ export interface PreparedLoanTerms {
 
 /** Prepared recalculation settings object. */
 export interface PreparedRecalculationSettings {
-  readonly scheduleMode: 'equal_principal' | 'equal_installment';
+  readonly scheduleMode: 'equal_principal' | 'equal_installment' | 'reamortizing';
   readonly roundingMode: string | null;
   readonly feesAndPremiumsPerPeriodCents: number | null;
+  /** Months between installment recomputations (re-amortizing mode). */
+  readonly resetFrequencyMonths: number | null;
 }
 
 export interface DraftToDomainResult {
@@ -431,10 +433,14 @@ export function adaptDraftToDomain(
   const roundingModeCode = readString(rs.roundingMode);
   const feesCents = readNumber(rs.feesAndPremiumsPerPeriodCents);
 
-  let scheduleMode: 'equal_principal' | 'equal_installment' | null = null;
+  let scheduleMode: 'equal_principal' | 'equal_installment' | 'reamortizing' | null = null;
   if (scheduleModeCode === null || scheduleModeCode === 'unknown') {
     miss('recalc_settings', 'Τύπος επανυπολογισμού', 'Ελλείπει ο τύπος επανυπολογισμού.');
-  } else if (scheduleModeCode === 'equal_principal' || scheduleModeCode === 'equal_installment') {
+  } else if (
+    scheduleModeCode === 'equal_principal' ||
+    scheduleModeCode === 'equal_installment' ||
+    scheduleModeCode === 'reamortizing'
+  ) {
     scheduleMode = scheduleModeCode;
   } else {
     review('recalc_settings', 'Τύπος επανυπολογισμού', 'Μη αναγνωρισμένος τύπος επανυπολογισμού· απαιτείται έλεγχος.');
@@ -448,9 +454,22 @@ export function adaptDraftToDomain(
     review('recalc_settings', 'Έξοδα / ασφάλιστρα ανά περίοδο', 'Τα έξοδα ανά περίοδο δεν έχουν προσδιοριστεί· δεν τεκμαίρονται μηδενικά.');
   }
 
+  // Reset frequency (re-amortizing mode only). Required when that mode is
+  // selected; ignored otherwise.
+  const resetFreqCode = readString(rs.installmentResetFrequency);
+  let resetFrequencyMonths: number | null = null;
+  if (scheduleMode === 'reamortizing') {
+    const map: Record<string, number> = { monthly: 1, quarterly: 3, semiannual: 6, annual: 12 };
+    if (resetFreqCode !== null && resetFreqCode in map) {
+      resetFrequencyMonths = map[resetFreqCode]!;
+    } else {
+      review('recalc_settings', 'Συχνότητα αναπροσαρμογής δόσης', 'Επιλέχθηκε αναπροσαρμοζόμενη δόση χωρίς συχνότητα αναπροσαρμογής· δηλώστε τη (μηνιαία/τριμηνιαία/εξαμηνιαία/ετήσια).');
+    }
+  }
+
   const recalculationSettings: PreparedRecalculationSettings | null =
     scheduleMode !== null
-      ? { scheduleMode, roundingMode, feesAndPremiumsPerPeriodCents: feesCents }
+      ? { scheduleMode, roundingMode, feesAndPremiumsPerPeriodCents: feesCents, resetFrequencyMonths }
       : null;
 
   /* --- case info object (only when all critical fields present) --------- */
