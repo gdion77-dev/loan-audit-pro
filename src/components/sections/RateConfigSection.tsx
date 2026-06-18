@@ -14,6 +14,8 @@ import {
   REGIME_KIND_OPTIONS,
   LAW128_STATUS_OPTIONS,
   CAPITALIZE_LATE_INTEREST_OPTIONS,
+  FLOATING_INDEX_TYPE_OPTIONS,
+  RATE_SOURCE_RULE_OPTIONS,
   type RateConfigDraft,
 } from '../../ui-state/loanAuditDraftState';
 import type { FieldState } from '../../ui-state/fieldState';
@@ -23,11 +25,21 @@ const def = SECTIONS.find((s) => s.id === 'rate_config')!;
 export interface RateConfigSectionProps {
   readonly draft: RateConfigDraft;
   readonly onSelectChange: (
-    field: 'regimeKind' | 'law128Status' | 'capitalizeLateInterestSemiAnnually',
+    field:
+      | 'regimeKind'
+      | 'law128Status'
+      | 'capitalizeLateInterestSemiAnnually'
+      | 'floatingIndexType'
+      | 'rateSourceRule',
     next: FieldState<string>,
   ) => void;
   readonly onNumberChange: (
-    field: 'annualRatePercent' | 'spreadPercent' | 'law128Percent' | 'lateInterestSurchargePercent',
+    field:
+      | 'annualRatePercent'
+      | 'spreadPercent'
+      | 'law128Percent'
+      | 'lateInterestSurchargePercent'
+      | 'businessDaysBeforeReset',
     next: FieldState<number>,
   ) => void;
 }
@@ -41,6 +53,11 @@ export const RateConfigSection: React.FC<RateConfigSectionProps> = ({
     draft.law128Status.status === 'value' && draft.law128Status.value === 'added_separately';
   const isFixed = draft.regimeKind.status === 'value' && draft.regimeKind.value === 'fixed';
   const isFloating = draft.regimeKind.status === 'value' && draft.regimeKind.value === 'floating';
+  const rateSourceRule =
+    draft.rateSourceRule.status === 'value' ? draft.rateSourceRule.value : null;
+  const showBusinessDays = isFloating && rateSourceRule === 'BUSINESS_DAYS_BEFORE_RESET';
+  const isMonthlyAverage = isFloating && rateSourceRule === 'MONTHLY_AVERAGE';
+  const isManualRate = isFloating && rateSourceRule === 'MANUAL_RATE';
   return (
   <section className="lap-card" aria-label={def.title}>
     <h2 className="lap-card__title">{def.title}</h2>
@@ -80,6 +97,59 @@ export const RateConfigSection: React.FC<RateConfigSectionProps> = ({
           onChange={(next) => onNumberChange('spreadPercent', next)}
           placeholder="π.χ. 2,50"
         />
+      ) : null}
+      {isFloating ? (
+        <SelectFieldStateControl
+          id="rate-floatingIndexType"
+          label="Είδος δείκτη"
+          options={FLOATING_INDEX_TYPE_OPTIONS}
+          field={draft.floatingIndexType}
+          onChange={(next) => onSelectChange('floatingIndexType', next)}
+        />
+      ) : null}
+      {isFloating ? (
+        <SelectFieldStateControl
+          id="rate-rateSourceRule"
+          label="Κανόνας πηγής επιτοκίου"
+          options={RATE_SOURCE_RULE_OPTIONS}
+          field={draft.rateSourceRule}
+          onChange={(next) => onSelectChange('rateSourceRule', next)}
+        />
+      ) : null}
+      {isFloating && rateSourceRule === 'CONTRACT_DEFINED' ? (
+        <p className="lap-field-help">
+          Audit-safe προεπιλογή: χρησιμοποιείται η τιμή δείκτη που προβλέπει ρητά η σύμβαση
+          (π.χ. ημερομηνία fixing / αναπροσαρμογής). Αν ο συμβατικός κανόνας δεν είναι σαφής,
+          το αποτέλεσμα επισημαίνεται ως «απαιτείται έλεγχος» και δεν αναπαράγεται ως οριστικό.
+        </p>
+      ) : null}
+      {showBusinessDays ? (
+        <NumberFieldStateControl
+          id="rate-businessDaysBeforeReset"
+          label="Εργάσιμες ημέρες πριν την έναρξη περιόδου"
+          field={draft.businessDaysBeforeReset}
+          onChange={(next) => onNumberChange('businessDaysBeforeReset', next)}
+          placeholder="π.χ. 2"
+        />
+      ) : null}
+      {isMonthlyAverage ? (
+        <p className="lap-field-help">
+          Προσοχή: η μέση μηνιαία τιμή είναι τεχνική εκτίμηση και δεν αναπαράγει κατ’ ανάγκη
+          την τραπεζική καρτέλα. Χρησιμοποιήστε την μόνο αν η σύμβαση το προβλέπει ρητά ή ως
+          ενδεικτικό υπολογισμό — επισημαίνεται αναλόγως στη μελέτη.
+        </p>
+      ) : null}
+      {isManualRate ? (
+        <p className="lap-field-help">
+          Οι τιμές δείκτη θα καταχωρηθούν χειροκίνητα ανά περίοδο. Χρήσιμο όταν δεν είναι
+          δυνατή η αυτόματη άντληση ή όταν διαθέτετε επίσημες τιμές από τη σύμβαση / καρτέλα.
+        </p>
+      ) : null}
+      {isFloating ? (
+        <p className="lap-field-help">
+          Αρνητικός δείκτης λαμβάνεται πάντα ως μηδέν: το εφαρμοζόμενο επιτόκιο δεν πέφτει
+          κάτω από το περιθώριο (μηδενισμός αρνητικής τιμής δείκτη).
+        </p>
       ) : null}
       <SelectFieldStateControl
         id="rate-law128Status"
