@@ -129,6 +129,48 @@ function fixingDateFor(
   return periodStart;
 }
 
+/**
+ * Build a CONTINUOUS rateHistory directly from index observations, so
+ * that ANY due date is covered (not only enumerated dates).
+ *
+ * Each observation becomes a period [obsDate, nextObsDate). The FIRST
+ * period extends back to 1900-01-01 and the LAST extends to 9999-12-31:
+ *   • due dates before the first observation use the earliest value,
+ *   • future due dates use the last published value (projection),
+ *   • negative values are floored to zero.
+ *
+ * Used for the live schedule, where the engine asks for a rate on every
+ * installment due date — including dates we never enumerated.
+ */
+export function buildContinuousRateHistory(
+  observations: readonly IndexObservation[],
+  source: RatePeriodSource = 'public_index',
+): { periods: RatePeriod[]; lastPublishedDate: string | null; lastPublishedValuePercent: number | null } {
+  if (observations.length === 0) {
+    return { periods: [], lastPublishedDate: null, lastPublishedValuePercent: null };
+  }
+  const sorted = [...observations].sort((a, b) =>
+    normalizeToDay(a.date) < normalizeToDay(b.date) ? -1 : normalizeToDay(a.date) > normalizeToDay(b.date) ? 1 : 0,
+  );
+  const periods: RatePeriod[] = [];
+  for (let i = 0; i < sorted.length; i += 1) {
+    const cur = sorted[i]!;
+    const from = i === 0 ? '1900-01-01' : normalizeToDay(cur.date);
+    const to = i === sorted.length - 1 ? '9999-12-31' : normalizeToDay(sorted[i + 1]!.date);
+    const raw = cur.valuePercent;
+    const effective = raw < 0 ? 0 : raw; // floor negative to zero
+    periods.push({
+      from: from as RatePeriod['from'],
+      to: to as RatePeriod['to'],
+      indexValuePercent: effective,
+      totalAppliedRatePercent: null,
+      source,
+    });
+  }
+  const last = sorted[sorted.length - 1]!;
+  return { periods, lastPublishedDate: last.date, lastPublishedValuePercent: last.valuePercent };
+}
+
 export function resolveFloatingRateHistory(input: ResolveFloatingInput): ResolveFloatingResult {
   const { observations, periodStartDates, rule } = input;
   const source: RatePeriodSource = input.source ?? 'public_index';
