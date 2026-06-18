@@ -139,6 +139,8 @@ export interface RecalculationSettingsDraft {
   readonly scheduleMode: FieldState<string>;
   readonly roundingMode: FieldState<string>;
   readonly feesAndPremiumsPerPeriodCents: FieldState<number>;
+  /** Reset frequency for the re-amortizing schedule mode. */
+  readonly installmentResetFrequency: FieldState<string>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -200,6 +202,7 @@ export function createEmptyDraftState(): LoanAuditDraftState {
       scheduleMode: fieldUnknown<string>('manual'),
       roundingMode: fieldUnknown<string>('manual'),
       feesAndPremiumsPerPeriodCents: fieldUnknown<number>('manual'),
+      installmentResetFrequency: fieldUnknown<string>('manual'),
     },
   };
 }
@@ -302,9 +305,19 @@ export const RATE_SOURCE_RULE_OPTIONS: readonly DraftSelectOption[] = [
   { code: 'unknown', label: 'Άγνωστο / απαιτείται έλεγχος', unknown: true },
 ] as const;
 export const SCHEDULE_MODE_OPTIONS: readonly DraftSelectOption[] = [
-  { code: 'equal_principal', label: 'Ίση δόση κεφαλαίου' },
-  { code: 'equal_installment', label: 'Σταθερή τοκοχρεολυτική δόση' },
+  { code: 'equal_installment', label: 'Σταθερή τοκοχρεολυτική δόση (σταθερό επιτόκιο)' },
+  { code: 'reamortizing', label: 'Κυμαινόμενη τοκοχρεολυτική δόση (αναπροσαρμοζόμενη)' },
+  { code: 'equal_principal', label: 'Ίση δόση κεφαλαίου (σταθερό χρεολύσιο)' },
   { code: 'unknown', label: 'Άγνωστο', unknown: true },
+] as const;
+
+/** Συχνότητα αναπροσαρμογής δόσης (re-amortizing). */
+export const INSTALLMENT_RESET_FREQUENCY_OPTIONS: readonly DraftSelectOption[] = [
+  { code: 'monthly', label: 'Μηνιαία (κάθε μήνα)' },
+  { code: 'quarterly', label: 'Τριμηνιαία (κάθε 3 μήνες)' },
+  { code: 'semiannual', label: 'Εξαμηνιαία (κάθε 6 μήνες)' },
+  { code: 'annual', label: 'Ετήσια (κάθε 12 μήνες)' },
+  { code: 'unknown', label: 'Άγνωστο / απαιτείται έλεγχος', unknown: true },
 ] as const;
 
 /** Πολιτική στρογγυλοποίησης. */
