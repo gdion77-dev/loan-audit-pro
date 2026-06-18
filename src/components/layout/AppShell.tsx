@@ -126,10 +126,42 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
     });
   };
 
+  // Builds the cover/methodology rate label. For floating rate, returns a
+  // DESCRIPTION (index + spread + Ν.128) rather than a single number, since
+  // a floating rate changes per period and one figure would mislead.
+  const buildRateLabel = (): string | undefined => {
+    const rc = draftState.rateConfigDraft;
+    const regime = rc.regimeKind.status === 'value' ? rc.regimeKind.value : null;
+    if (regime !== 'floating') return undefined; // fixed: keep existing numeric label
+    const INDEX: Record<string, string> = {
+      EURIBOR_1M: 'Euribor 1M',
+      EURIBOR_3M: 'Euribor 3M',
+      EURIBOR_6M: 'Euribor 6M',
+      EURIBOR_12M: 'Euribor 12M',
+      ECB: 'Επιτόκιο ΕΚΤ',
+      other: 'Δείκτης',
+    };
+    const idx = rc.floatingIndexType.status === 'value' && rc.floatingIndexType.value
+      ? (INDEX[rc.floatingIndexType.value] ?? 'Δείκτης')
+      : 'Δείκτης';
+    const fmt = (n: number) => n.toLocaleString('el-GR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const spread = rc.spreadPercent.status === 'value' && rc.spreadPercent.value != null
+      ? ` + ${fmt(rc.spreadPercent.value)}%`
+      : '';
+    const law128 =
+      rc.law128Status.status === 'value' &&
+      rc.law128Status.value === 'added_separately' &&
+      rc.law128Percent.status === 'value' &&
+      rc.law128Percent.value != null
+        ? ` (+ ${fmt(rc.law128Percent.value)}% Ν.128)`
+        : '';
+    return `${idx}${spread}${law128} — κυμαινόμενο`;
+  };
+
   const onOpenHtmlReport = (): void => {
     // Opens a professionally-formatted HTML report in a new tab for the
     // user to print to PDF. Reads stored results only; no recomputation.
-    const ok = openHtmlReport(pipelineResult, actualPaymentsAmortization);
+    const ok = openHtmlReport(pipelineResult, actualPaymentsAmortization, buildRateLabel());
     if (!ok) {
       setPdfBrowserMessage(
         'Δεν ήταν δυνατό το άνοιγμα της αναφοράς. Επιτρέψτε τα αναδυόμενα παράθυρα και εκτελέστε πρώτα τη μελέτη.',
