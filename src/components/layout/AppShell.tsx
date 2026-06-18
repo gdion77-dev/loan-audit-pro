@@ -31,9 +31,11 @@ import {
   type CaseInfoDraft,
   type RateConfigDraft,
   type RecalculationSettingsDraft,
+  type FloatingRateObservation,
+  type FloatingRateLockMeta,
 } from '../../ui-state/loanAuditDraftState';
 import { updateDraftField } from '../../ui-state/draftUpdates';
-import {
+import { fetchEcbIndex, type EcbIndexCode, type EcbFetchStatus } from '../../services/ecbRateService';import {
   addBankScheduleDraftRow,
   removeBankScheduleDraftRow,
   updateBankScheduleDraftRowField,
@@ -84,6 +86,8 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
   const [actualPaymentsAmortization, setActualPaymentsAmortization] =
     useState<ActualPaymentsAmortizationResult | null>(null);
   const [pdfBrowserMessage, setPdfBrowserMessage] = useState<string | null>(null);
+  const [ecbFetchStatus, setEcbFetchStatus] = useState<EcbFetchStatus | 'idle' | 'loading'>('idle');
+  const [ecbFetchMessage, setEcbFetchMessage] = useState<string | null>(null);
 
   const onExecutePipeline = (): void => {
     // gate again at execution time; the helper itself also re-validates
@@ -170,6 +174,69 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
   ): void => {
     setDraftState((prev) => updateDraftField(prev, 'rateConfigDraft', field, next));
   };
+
+  // Fetch index observations from the ECB and lock them into the case.
+  // On any failure the UI exposes a manual-entry fallback.
+  const onFetchAndLockRates = async (): Promise<void> => {
+    const rc = draftState.rateConfigDraft;
+    const idx = rc.floatingIndexType.status === 'value' ? rc.floatingIndexType.value : null;
+    const fetchable: readonly EcbIndexCode[] = ['EURIBOR_1M', 'EURIBOR_3M', 'EURIBOR_6M', 'EURIBOR_12M', 'ECB'];
+    if (idx === null || !fetchable.includes(idx as EcbIndexCode)) {
+      setEcbFetchStatus('idle');
+      setEcbFetchMessage('Επιλέξτε πρώτα ένα είδος δείκτη με διαθέσιμη άντληση (Euribor ή ΕΚΤ).');
+      return;
+    }
+    setEcbFetchStatus('loading');
+    setEcbFetchMessage('Άντληση τιμών από την ΕΚΤ…');
+    const result = await fetchEcbIndex(idx as EcbIndexCode);
+    setEcbFetchStatus(result.status);
+    setEcbFetchMessage(result.message);
+    if (result.status === 'success') {
+      const observations: readonly FloatingRateObservation[] = result.observations.map((o) => ({ date: o.date, valuePercent: o.valuePercent }));
+      const lastDate = observations.length > 0 ? observations[observations.length - 1]!.date : null;
+      const meta: FloatingRateLockMeta = {
+        source: 'ecb_api',
+        indexCode: idx,
+        lockedAt: new Date().toISOString(),
+        lastPublishedDate: lastDate,
+      };
+      setDraftState((prev) =>
+        updateDraftField(
+          updateDraftField(prev, 'rateConfigDraft', 'floatingRateObservations', observations),
+          'rateConfigDraft',
+          'floatingRateLock',
+          meta,
+        ),
+      );
+    }
+  };
+
+  // Lock manually entered observations (used when the ECB fetch fails).
+  const onLockManualRates = (observations: readonly { date: string; valuePercent: number }[]): void => {
+    const lastDate = observations.length > 0 ? observations[observations.length - 1]!.date : null;
+    const idxCode =
+      draftState.rateConfigDraft.floatingIndexType.status === 'value'
+        ? (draftState.rateConfigDraft.floatingIndexType.value ?? 'manual')
+        : 'manual';
+    const meta: FloatingRateLockMeta = {
+      source: 'manual',
+      indexCode: idxCode,
+      lockedAt: new Date().toISOString(),
+      lastPublishedDate: lastDate,
+    };
+    const obs: readonly FloatingRateObservation[] = observations;
+    setDraftState((prev) =>
+      updateDraftField(
+        updateDraftField(prev, 'rateConfigDraft', 'floatingRateObservations', obs),
+        'rateConfigDraft',
+        'floatingRateLock',
+        meta,
+      ),
+    );
+    setEcbFetchStatus('success');
+    setEcbFetchMessage(`Κλειδώθηκαν ${observations.length} τιμές (χειροκίνητη καταχώρηση).`);
+  };
+
   const onRecalcSelectChange = (
     field: 'scheduleMode' | 'roundingMode',
     next: FieldState<string>,
@@ -271,6 +338,10 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
           draft={draftState.rateConfigDraft}
           onSelectChange={onRateConfigSelectChange}
           onNumberChange={onRateConfigNumberChange}
+          onFetchAndLockRates={onFetchAndLockRates}
+          onLockManualRates={onLockManualRates}
+          ecbFetchStatus={ecbFetchStatus}
+          ecbFetchMessage={ecbFetchMessage}
         />
       );
     }
