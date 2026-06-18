@@ -373,7 +373,7 @@ export function adaptDraftToDomain(
     };
 
     if (projectedCount > 0) {
-      warn(
+      note(
         'rate_config',
         'Μελλοντικές δόσεις',
         `Για ${projectedCount} μελλοντικές δόσεις χρησιμοποιήθηκε η τελευταία δημοσιευμένη τιμή δείκτη (${continuous.lastPublishedValuePercent}% της ${continuous.lastPublishedDate}). Επισημαίνεται στη μελέτη.`,
