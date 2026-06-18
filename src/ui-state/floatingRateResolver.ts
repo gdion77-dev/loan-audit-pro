@@ -85,6 +85,13 @@ function normalizeToDay(iso: string): string {
   return /^\d{4}-\d{2}$/.test(iso) ? `${iso}-01` : iso;
 }
 
+/** The calendar day immediately before the given ISO day (yyyy-mm-dd). */
+function dayBefore(isoDay: string): string {
+  const d = new Date(`${normalizeToDay(isoDay)}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
 /**
  * As-of lookup: the most recent observation whose date is <= targetDate.
  * Observations must be ascending. Returns null when target precedes all.
@@ -156,7 +163,13 @@ export function buildContinuousRateHistory(
   for (let i = 0; i < sorted.length; i += 1) {
     const cur = sorted[i]!;
     const from = i === 0 ? '1900-01-01' : normalizeToDay(cur.date);
-    const to = i === sorted.length - 1 ? '9999-12-31' : normalizeToDay(sorted[i + 1]!.date);
+    // `to` is the day BEFORE the next period starts, so adjacent periods
+    // do not both contain the boundary date (the engine treats both
+    // bounds as inclusive). The last period extends far into the future.
+    const to =
+      i === sorted.length - 1
+        ? '9999-12-31'
+        : dayBefore(normalizeToDay(sorted[i + 1]!.date));
     const raw = cur.valuePercent;
     const effective = raw < 0 ? 0 : raw; // floor negative to zero
     periods.push({
