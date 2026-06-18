@@ -33,6 +33,13 @@ export const FLOATING_INDEX_TYPES: readonly FloatingIndexType[] = [
   'other',
 ] as const;
 
+export function isFloatingIndexType(value: unknown): value is FloatingIndexType {
+  return (
+    typeof value === 'string' &&
+    (FLOATING_INDEX_TYPES as readonly string[]).includes(value)
+  );
+}
+
 /**
  * How a zero/negative index value is treated.
  *   as_is      -> negative index reduces the total rate
