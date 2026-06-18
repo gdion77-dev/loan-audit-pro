@@ -68,6 +68,55 @@ const SEVERITY_LABEL: Record<string, string> = {
   attention: 'ΠΡΟΣΟΧΗ',
 };
 
+/**
+ * Plain-language explanations for findings, keyed by the engine's stable
+ * finding title. The engine text (legally precise but technical) is kept
+ * as a secondary line; this gives a non-expert reader a clear summary.
+ * Unknown titles fall back to the technical text only.
+ */
+const FINDING_PLAIN: Record<string, { title: string; text: (count: number, amount: string) => string }> = {
+  'Καμία απόκλιση άνω κατωφλίου': {
+    title: 'Δεν βρέθηκε σημαντική διαφορά',
+    text: () =>
+      'Συγκρίνοντας το δοσολόγιο που υπολόγισε η εφαρμογή με τα στοιχεία της τράπεζας, δεν προέκυψε διαφορά που να ξεπερνά το όριο σημαντικότητας.',
+  },
+  'Σύνοψη σύγκρισης με τραπεζικά δεδομένα': {
+    title: 'Σύγκριση με τα στοιχεία της τράπεζας',
+    text: (count) =>
+      `Ελέγχθηκαν ${count} περίοδοι του δανείου. Η σύγκριση του υπολογισμού της εφαρμογής με τα στοιχεία της τράπεζας δεν εμφάνισε διαφορά.`,
+  },
+  'Οικονομική απόκλιση πραγματικής καταβολής': {
+    title: 'Διαφορές στις πραγματικές καταβολές',
+    text: (count, amount) =>
+      `Σε ${count} περιόδους, το ποσό που πληρώθηκε διαφέρει από την κανονική δόση. Συνολική διαφορά: ${amount}. Αρνητικό ποσό σημαίνει ότι πληρώθηκε λιγότερο από την κανονική δόση. Καλό είναι να ελεγχθεί.`,
+  },
+  'Σύνοψη συμφωνίας πραγματικών καταβολών': {
+    title: 'Σύνοψη πραγματικών καταβολών',
+    text: (count, amount) =>
+      `Καταχωρίστηκαν ${count} πραγματικές καταβολές. Η συνολική διαφορά τους από τις κανονικές δόσεις είναι ${amount} (αρνητικό = πληρώθηκε λιγότερο).`,
+  },
+  'Μη αντιστοιχισμένες πραγματικές καταβολές': {
+    title: 'Καταβολές χωρίς αντιστοίχιση',
+    text: (count) =>
+      `${count} πραγματικές καταβολές δεν μπόρεσαν να αντιστοιχιστούν σε συγκεκριμένη δόση. Χρειάζεται έλεγχος.`,
+  },
+  'Μη οριστικοποιήσιμα ευρήματα σύγκρισης': {
+    title: 'Η σύγκριση δεν ολοκληρώθηκε',
+    text: () =>
+      'Η σύγκριση με τα στοιχεία της τράπεζας δεν μπόρεσε να ολοκληρωθεί λόγω ελλιπών δεδομένων. Δεν υπολογίστηκαν ποσά με υποθέσεις.',
+  },
+};
+
+function plainFinding(
+  title: string,
+  count: number,
+  amount: string,
+): { title: string; text: string } | null {
+  const m = FINDING_PLAIN[title];
+  if (!m) return null;
+  return { title: m.title, text: m.text(count, amount) };
+}
+
 export interface HtmlReportResult {
   readonly status: 'ok' | 'no_data';
   readonly html: string;
@@ -169,13 +218,20 @@ function buildReportData(
     },
 
     actualPaymentsNote: buildActualPaymentsNote(pipelineResult),
-    findings: findings.map((f) => ({
-      code: f.findingId,
-      severity: SEVERITY_LABEL[f.level] ?? f.level,
-      title: f.title,
-      text: f.description,
-      magnitude: eur(f.amountCents),
-    })),
+    findings: findings.map((f) => {
+      const amountStr =
+        f.amountCents === null ? '—' : `${eur(f.amountCents).toFixed(2).replace('.', ',')} €`;
+      const plain = plainFinding(f.title, f.count ?? 0, amountStr);
+      return {
+        code: f.findingId,
+        severity: SEVERITY_LABEL[f.level] ?? f.level,
+        title: plain ? plain.title : f.title,
+        text: plain ? plain.text : f.description,
+        technicalTitle: f.title,
+        technicalText: f.description,
+        magnitude: eur(f.amountCents),
+      };
+    }),
 
     missingData:
       summary.excludedRowCount === 0
