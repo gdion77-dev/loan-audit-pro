@@ -7,6 +7,7 @@
  * section and onChange callbacks from AppShell. No engine call.
  */
 import React from 'react';
+import { useState } from 'react';
 import { SelectFieldStateControl } from '../fields/SelectFieldStateControl';
 import { NumberFieldStateControl } from '../fields/NumberFieldStateControl';
 import { SECTIONS, CONNECT_LATER_NOTE } from './sectionDefinitions';
@@ -42,12 +43,24 @@ export interface RateConfigSectionProps {
       | 'businessDaysBeforeReset',
     next: FieldState<number>,
   ) => void;
+  /** Fetch index values from the ECB and lock them into the case. */
+  readonly onFetchAndLockRates?: () => void | Promise<void>;
+  /** Lock manually entered observations (fallback when fetch fails). */
+  readonly onLockManualRates?: (
+    observations: readonly { date: string; valuePercent: number }[],
+  ) => void;
+  readonly ecbFetchStatus?: string;
+  readonly ecbFetchMessage?: string | null;
 }
 
 export const RateConfigSection: React.FC<RateConfigSectionProps> = ({
   draft,
   onSelectChange,
   onNumberChange,
+  onFetchAndLockRates,
+  onLockManualRates,
+  ecbFetchStatus,
+  ecbFetchMessage,
 }) => {
   const law128AddedSeparately =
     draft.law128Status.status === 'value' && draft.law128Status.value === 'added_separately';
@@ -58,6 +71,24 @@ export const RateConfigSection: React.FC<RateConfigSectionProps> = ({
   const showBusinessDays = isFloating && rateSourceRule === 'BUSINESS_DAYS_BEFORE_RESET';
   const isMonthlyAverage = isFloating && rateSourceRule === 'MONTHLY_AVERAGE';
   const isManualRate = isFloating && rateSourceRule === 'MANUAL_RATE';
+
+  const lockedCount = draft.floatingRateObservations.length;
+  const lockMeta = draft.floatingRateLock;
+  const fetchFailed =
+    ecbFetchStatus === 'network_error' ||
+    ecbFetchStatus === 'http_error' ||
+    ecbFetchStatus === 'empty' ||
+    ecbFetchStatus === 'parse_error';
+  const [manualText, setManualText] = useState('');
+  const parseManual = (): { date: string; valuePercent: number }[] => {
+    // Accept lines of "YYYY-MM-DD; 3.85" or "YYYY-MM-DD , 3,85".
+    const out: { date: string; valuePercent: number }[] = [];
+    manualText.split(/\r?\n/).forEach((line) => {
+      const m = line.trim().match(/^(\d{4}-\d{2}(?:-\d{2})?)\s*[;,]\s*(-?\d+(?:[.,]\d+)?)$/);
+      if (m) out.push({ date: m[1]!, valuePercent: Number(m[2]!.replace(',', '.')) });
+    });
+    return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  };
   return (
   <section className="lap-card" aria-label={def.title}>
     <h2 className="lap-card__title">{def.title}</h2>
@@ -175,6 +206,68 @@ export const RateConfigSection: React.FC<RateConfigSectionProps> = ({
       {' '}+ εισφορά Ν.128/75 (όταν προστίθεται χωριστά). Το περιθώριο αφορά μόνο το κυμαινόμενο
       καθεστώς (δείκτης + περιθώριο).
     </p>
+
+    {isFloating ? (
+      <div className="lap-subsection" style={{ marginTop: '14px' }}>
+        <h3 className="lap-card__subtitle">Τιμές δείκτη (άντληση &amp; κλείδωμα)</h3>
+        <p className="lap-card__explanation">
+          Οι τιμές αντλούνται από την ΕΚΤ και «κλειδώνονται» στην υπόθεση, ώστε η μελέτη να
+          βασίζεται σε σταθερές, ιχνηλάσιμες τιμές — ανεξάρτητα από μελλοντικές μεταβολές της
+          δημοσιευμένης σειράς. Για μελλοντικές δόσεις χρησιμοποιείται η τελευταία δημοσιευμένη
+          τιμή (επισημαίνεται στη μελέτη).
+        </p>
+
+        {lockedCount > 0 ? (
+          <p className="lap-field-help" style={{ color: 'var(--accent, #0E8FA8)' }}>
+            ✓ Κλειδωμένες {lockedCount} τιμές
+            {lockMeta ? ` (${lockMeta.source === 'ecb_api' ? 'ΕΚΤ' : 'χειροκίνητα'}, τελευταία ${lockMeta.lastPublishedDate ?? '—'})` : ''}.
+          </p>
+        ) : (
+          <p className="lap-field-help">Δεν έχουν κλειδωθεί τιμές ακόμη.</p>
+        )}
+
+        <button
+          type="button"
+          className="lap-button"
+          onClick={() => { void onFetchAndLockRates?.(); }}
+          disabled={ecbFetchStatus === 'loading'}
+        >
+          {ecbFetchStatus === 'loading' ? 'Άντληση…' : 'Άντληση & κλείδωμα τιμών ΕΚΤ'}
+        </button>
+
+        {ecbFetchMessage ? (
+          <p className="lap-field-help" style={fetchFailed ? { color: 'var(--danger, #B23A48)' } : undefined}>
+            {ecbFetchMessage}
+          </p>
+        ) : null}
+
+        {fetchFailed ? (
+          <div style={{ marginTop: '10px' }}>
+            <p className="lap-field-help">
+              Η αυτόματη άντληση δεν ήταν δυνατή. Καταχωρήστε τιμές χειροκίνητα — μία ανά γραμμή,
+              σε μορφή «ΗΗΗΗ-ΜΜ-ΗΗ; τιμή» (π.χ. <code>2022-07-01; 0,20</code>).
+            </p>
+            <textarea
+              className="lap-textarea"
+              rows={5}
+              value={manualText}
+              onChange={(e: { target: { value: string } }) => setManualText(e.target.value)}
+              placeholder={'2022-07-01; 0,20\n2022-10-03; 1,50\n2023-01-02; 2,50'}
+              style={{ width: '100%', fontFamily: 'monospace', fontSize: '12px' }}
+            />
+            <button
+              type="button"
+              className="lap-button"
+              onClick={() => onLockManualRates?.(parseManual())}
+              disabled={parseManual().length === 0}
+              style={{ marginTop: '6px' }}
+            >
+              Κλείδωμα χειροκίνητων τιμών
+            </button>
+          </div>
+        ) : null}
+      </div>
+    ) : null}
 
     <h3 className="lap-card__subtitle">Τόκος υπερημερίας (πραγματικές καταβολές)</h3>
     <p className="lap-card__explanation">
