@@ -149,13 +149,23 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
     setDraftState((prev) => updateDraftField(prev, 'loanTermsDraft', field, next));
   };
   const onRateConfigSelectChange = (
-    field: 'regimeKind' | 'law128Status' | 'capitalizeLateInterestSemiAnnually',
+    field:
+      | 'regimeKind'
+      | 'law128Status'
+      | 'capitalizeLateInterestSemiAnnually'
+      | 'floatingIndexType'
+      | 'rateSourceRule',
     next: FieldState<string>,
   ): void => {
     setDraftState((prev) => updateDraftField(prev, 'rateConfigDraft', field, next));
   };
   const onRateConfigNumberChange = (
-    field: 'annualRatePercent' | 'spreadPercent' | 'law128Percent' | 'lateInterestSurchargePercent',
+    field:
+      | 'annualRatePercent'
+      | 'spreadPercent'
+      | 'law128Percent'
+      | 'lateInterestSurchargePercent'
+      | 'businessDaysBeforeReset',
     next: FieldState<number>,
   ): void => {
     setDraftState((prev) => updateDraftField(prev, 'rateConfigDraft', field, next));
