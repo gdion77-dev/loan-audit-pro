@@ -60,6 +60,22 @@ export interface RateConfigDraft {
    * 'yes' — ΑΚ 296).
    */
   readonly capitalizeLateInterestSemiAnnually: FieldState<string>;
+  /**
+   * Floating-rate fields (used only when regimeKind = 'floating').
+   * --------------------------------------------------------------
+   * floatingIndexType: which reference index (EURIBOR_1M/3M/6M/12M,
+   *   ECB, other). Maps to the domain FloatingIndexType.
+   * rateSourceRule: how the index value for each period is selected.
+   *   DEFAULT = 'CONTRACT_DEFINED' (audit-safe). Other values are
+   *   explicit specializations or a manual override.
+   * businessDaysBeforeReset: N business days before the period start
+   *   (used only when rateSourceRule = 'BUSINESS_DAYS_BEFORE_RESET').
+   * Negative-index handling is locked to floor-at-zero in the adapter
+   *   (no UI field): a negative index is always treated as 0.
+   */
+  readonly floatingIndexType: FieldState<string>;
+  readonly rateSourceRule: FieldState<string>;
+  readonly businessDaysBeforeReset: FieldState<number>;
 }
 
 export interface BankScheduleDraftRow {
@@ -138,6 +154,9 @@ export function createEmptyDraftState(): LoanAuditDraftState {
       law128Percent: fieldUnknown<number>('manual'),
       lateInterestSurchargePercent: fieldUnknown<number>('manual'),
       capitalizeLateInterestSemiAnnually: fieldUnknown<string>('manual'),
+      floatingIndexType: fieldUnknown<string>('manual'),
+      rateSourceRule: fieldUnknown<string>('manual'),
+      businessDaysBeforeReset: fieldUnknown<number>('manual'),
     },
     bankScheduleDraft: {
       rows: [],
@@ -229,7 +248,30 @@ export const CAPITALIZE_LATE_INTEREST_OPTIONS: readonly DraftSelectOption[] = [
   { code: 'unknown', label: 'Άγνωστο / απαιτείται έλεγχος', unknown: true },
 ] as const;
 
-/** Τύπος επανυπολογισμού. */
+/** Είδος δείκτη κυμαινόμενου επιτοκίου. Codes match domain FloatingIndexType. */
+export const FLOATING_INDEX_TYPE_OPTIONS: readonly DraftSelectOption[] = [
+  { code: 'EURIBOR_1M', label: 'Euribor 1 μηνός' },
+  { code: 'EURIBOR_3M', label: 'Euribor 3 μηνών' },
+  { code: 'EURIBOR_6M', label: 'Euribor 6 μηνών' },
+  { code: 'EURIBOR_12M', label: 'Euribor 12 μηνών' },
+  { code: 'ECB', label: 'Επιτόκιο ΕΚΤ (πράξεις κύριας αναχρηματοδότησης)' },
+  { code: 'other', label: 'Άλλος δείκτης' },
+  { code: 'unknown', label: 'Άγνωστο / απαιτείται έλεγχος', unknown: true },
+] as const;
+
+/**
+ * Κανόνας επιλογής τιμής δείκτη ανά περίοδο εκτοκισμού.
+ * DEFAULT (audit-safe) = 'CONTRACT_DEFINED'. Η «μέση μηνιαία τιμή»
+ * δεν είναι default — μόνο τεχνική εκτίμηση με ρητή ένδειξη.
+ */
+export const RATE_SOURCE_RULE_OPTIONS: readonly DraftSelectOption[] = [
+  { code: 'CONTRACT_DEFINED', label: 'Όπως ορίζει η σύμβαση (προεπιλογή)' },
+  { code: 'RESET_DATE_VALUE', label: 'Τιμή ημέρας αναπροσαρμογής (reset)' },
+  { code: 'BUSINESS_DAYS_BEFORE_RESET', label: 'Ν εργάσιμες πριν την έναρξη περιόδου' },
+  { code: 'MONTHLY_AVERAGE', label: 'Μέση μηνιαία τιμή (τεχνική εκτίμηση — όχι ακριβής αναπαραγωγή)' },
+  { code: 'MANUAL_RATE', label: 'Χειροκίνητη καταχώρηση τιμών' },
+  { code: 'unknown', label: 'Άγνωστο / απαιτείται έλεγχος', unknown: true },
+] as const;
 export const SCHEDULE_MODE_OPTIONS: readonly DraftSelectOption[] = [
   { code: 'equal_principal', label: 'Ίση δόση κεφαλαίου' },
   { code: 'equal_installment', label: 'Σταθερή τοκοχρεολυτική δόση' },
@@ -256,4 +298,3 @@ export const DAY_COUNT_CONVENTION_OPTIONS: readonly DraftSelectOption[] = [
   { code: '30E_360', label: '30E/360' },
   { code: 'unknown', label: 'Άγνωστο', unknown: true },
 ] as const;
-
