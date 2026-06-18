@@ -121,18 +121,39 @@ export function buildPipelineInputFromAdapter(
       : rateConfig.law128.kind === 'added_separately'
         ? 'προστίθεται χωριστά'
         : 'δεν έχει προσδιοριστεί';
-  const rateText =
-    rateConfig.regime.kind === 'fixed'
-      ? `σταθερό ${rateConfig.regime.annualRatePercent}%`
-      : `κυμαινόμενο με περιθώριο ${rateConfig.regime.spreadPercent}%`;
+  const proj = adapted.floatingRateProjection;
+  const INDEX_LABEL: Record<string, string> = {
+    EURIBOR_1M: 'Euribor 1Μ',
+    EURIBOR_3M: 'Euribor 3Μ',
+    EURIBOR_6M: 'Euribor 6Μ',
+    EURIBOR_12M: 'Euribor 12Μ',
+    ECB: 'επιτόκιο ΕΚΤ',
+    other: 'δείκτης',
+  };
+  let rateText: string;
+  if (rateConfig.regime.kind === 'fixed') {
+    rateText = `σταθερό ${rateConfig.regime.annualRatePercent}%`;
+  } else {
+    const idxLabel = INDEX_LABEL[rateConfig.regime.indexType] ?? 'δείκτης';
+    const ruleText = rateConfig.regime.referenceDateRule ? `, ${rateConfig.regime.referenceDateRule}` : '';
+    rateText = `κυμαινόμενο: ${idxLabel} + περιθώριο ${rateConfig.regime.spreadPercent}%${ruleText}`;
+  }
+  const negativeIndexText =
+    rateConfig.regime.kind === 'floating'
+      ? 'αρνητικός δείκτης λαμβάνεται ως μηδέν (floor 0)'
+      : 'δεν έχει προσδιοριστεί';
+  const projectionNote =
+    proj && proj.projectedCount > 0
+      ? ` Για ${proj.projectedCount} μελλοντικές δόσεις χρησιμοποιήθηκε η τελευταία δημοσιευμένη τιμή δείκτη (${proj.lastPublishedValuePercent}% της ${proj.lastPublishedDate}).`
+      : '';
   const methodology: ReportMethodologyInput = {
     scheduleType: scheduleMode === 'equal_principal' ? 'ίση δόση κεφαλαίου' : 'σταθερή τοκοχρεολυτική δόση',
     rateDescription: rateText,
     dayCountConvention: rateConfig.dayCount,
     law128Status: law128Text,
-    negativeIndexPolicy: 'δεν έχει προσδιοριστεί',
+    negativeIndexPolicy: negativeIndexText,
     roundingPolicy: roundingMode ?? 'δεν έχει προσδιοριστεί',
-    dataCoverageNote: `${bankRows.length} γραμμές δοσολογίου, ${actualPayments.length} πραγματικές καταβολές βάσει διαθέσιμων δεδομένων.`,
+    dataCoverageNote: `${bankRows.length} γραμμές δοσολογίου, ${actualPayments.length} πραγματικές καταβολές βάσει διαθέσιμων δεδομένων.${projectionNote}`,
   };
 
   return {
