@@ -42,6 +42,11 @@ import {
   type EqualInstallmentScheduleResult,
 } from './equalInstallmentScheduleEngine';
 import {
+  buildReamortizingSchedule,
+  type ReamortizingScheduleInput,
+  type ReamortizingScheduleResult,
+} from './reamortizingScheduleEngine';
+import {
   compareSchedules,
   type ScheduleComparisonResult,
   type MatchingMode,
@@ -104,7 +109,7 @@ export type PipelineStage =
 
 export type PipelineStatus = 'success' | 'requires_review' | 'missing_data';
 
-export type ScheduleMode = 'equal_principal' | 'equal_installment';
+export type ScheduleMode = 'equal_principal' | 'equal_installment' | 'reamortizing';
 
 export interface ComparisonOptions {
   readonly matchingMode?: MatchingMode;
@@ -127,7 +132,7 @@ export interface FindingsOptions {
 export interface LoanAuditPipelineInput {
   readonly caseInfo: CaseInfo;
   readonly scheduleMode: ScheduleMode;
-  readonly scheduleInput: EqualPrincipalScheduleInput | EqualInstallmentScheduleInput;
+  readonly scheduleInput: EqualPrincipalScheduleInput | EqualInstallmentScheduleInput | ReamortizingScheduleInput;
   readonly bankRows: readonly BankScheduleRow[];
   readonly actualPayments?: readonly ActualPayment[];
   readonly comparisonOptions?: ComparisonOptions;
@@ -147,7 +152,8 @@ export interface LoanAuditPipelineInput {
 
 export type RecalcScheduleResult =
   | EqualPrincipalScheduleResult
-  | EqualInstallmentScheduleResult;
+  | EqualInstallmentScheduleResult
+  | ReamortizingScheduleResult;
 
 export interface LoanAuditPipelineResult {
   readonly status: PipelineStatus;
@@ -192,7 +198,9 @@ export function runLoanAuditPipeline(
   const recalcScheduleResult: RecalcScheduleResult =
     input.scheduleMode === 'equal_principal'
       ? buildEqualPrincipalSchedule(input.scheduleInput as EqualPrincipalScheduleInput)
-      : buildEqualInstallmentSchedule(input.scheduleInput as EqualInstallmentScheduleInput);
+      : input.scheduleMode === 'reamortizing'
+        ? buildReamortizingSchedule(input.scheduleInput as ReamortizingScheduleInput)
+        : buildEqualInstallmentSchedule(input.scheduleInput as EqualInstallmentScheduleInput);
   collect('schedule', recalcScheduleResult.auditEntries);
 
   const recalcRows: readonly RecalcRow[] = recalcScheduleResult.rows;
