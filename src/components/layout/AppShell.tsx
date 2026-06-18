@@ -270,7 +270,7 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
   };
 
   const onRecalcSelectChange = (
-    field: 'scheduleMode' | 'roundingMode',
+    field: 'scheduleMode' | 'roundingMode' | 'installmentResetFrequency',
     next: FieldState<string>,
   ): void => {
     setDraftState((prev) => updateDraftField(prev, 'recalculationSettingsDraft', field, next));
