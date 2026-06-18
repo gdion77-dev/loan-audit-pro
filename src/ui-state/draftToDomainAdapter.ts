@@ -28,7 +28,8 @@ import type {
 import { moneyFromCents, type Money, type NullableMoney, type CurrencyCode } from '../domain/money';
 import { isValidISODate, isDayCountConvention, type ISODate, type DayCountConvention } from '../domain/dateTypes';
 import type { CaseInfo } from '../domain/loanTypes';
-import type { RateConfig, RateRegime, Law128Status } from '../domain/rateTypes';
+import type { RateConfig, RateRegime, Law128Status, FloatingIndexType } from '../domain/rateTypes';
+import { isFloatingIndexType } from '../domain/rateTypes';
 import type { BankScheduleRow } from '../domain/scheduleTypes';
 import type { ActualPayment } from '../domain/paymentTypes';
 
@@ -160,6 +161,9 @@ export function adaptDraftToDomain(
   const spreadPercent = readNumber(rc.spreadPercent);
   const law128Code = readString(rc.law128Status);
   const law128Percent = readNumber(rc.law128Percent);
+  const floatingIndexCode = readString(rc.floatingIndexType);
+  const rateSourceRule = readString(rc.rateSourceRule);
+  const businessDaysBeforeReset = readNumber(rc.businessDaysBeforeReset);
 
   let regime: RateRegime | null = null;
   if (regimeKind === null) {
@@ -174,17 +178,57 @@ export function adaptDraftToDomain(
     if (spreadPercent === null) {
       miss('rate_config', 'Περιθώριο %', 'Κυμαινόμενο καθεστώς χωρίς περιθώριο· δεν τεκμαίρεται τιμή.');
     } else {
+      // Index type: use the selected value when valid; unknown/absent
+      // falls back to 'other' and is flagged for review (never silently
+      // assumed).
+      let indexType: FloatingIndexType;
+      if (isFloatingIndexType(floatingIndexCode)) {
+        indexType = floatingIndexCode;
+      } else {
+        indexType = 'other';
+        review('rate_config', 'Είδος δείκτη', 'Κυμαινόμενο καθεστώς χωρίς προσδιορισμένο είδος δείκτη· απαιτείται έλεγχος.');
+      }
+
+      // Rate-source rule → human-readable referenceDateRule recorded on
+      // the regime (surfaced in the methodology/report). The audit-safe
+      // default is CONTRACT_DEFINED.
+      let referenceDateRule: string | null = null;
+      if (rateSourceRule === null || rateSourceRule === 'unknown') {
+        referenceDateRule = null;
+        review('rate_config', 'Κανόνας πηγής επιτοκίου', 'Δεν έχει προσδιοριστεί ο κανόνας επιλογής τιμής δείκτη· απαιτείται έλεγχος (audit-safe προεπιλογή: όπως ορίζει η σύμβαση).');
+      } else if (rateSourceRule === 'CONTRACT_DEFINED') {
+        referenceDateRule = 'Όπως ορίζει η σύμβαση';
+      } else if (rateSourceRule === 'RESET_DATE_VALUE') {
+        referenceDateRule = 'Τιμή ημέρας αναπροσαρμογής (reset)';
+      } else if (rateSourceRule === 'BUSINESS_DAYS_BEFORE_RESET') {
+        if (businessDaysBeforeReset === null) {
+          referenceDateRule = 'Εργάσιμες ημέρες πριν την έναρξη περιόδου';
+          review('rate_config', 'Εργάσιμες ημέρες πριν την έναρξη περιόδου', 'Επιλέχθηκε «Ν εργάσιμες πριν» χωρίς αριθμό ημερών· καταχωρήστε τον αριθμό.');
+        } else {
+          referenceDateRule = `${businessDaysBeforeReset} εργάσιμες ημέρες πριν την έναρξη της περιόδου εκτοκισμού`;
+        }
+      } else if (rateSourceRule === 'MONTHLY_AVERAGE') {
+        referenceDateRule = 'Μέση μηνιαία τιμή (τεχνική εκτίμηση)';
+        review('rate_config', 'Κανόνας πηγής επιτοκίου', 'Η μέση μηνιαία τιμή είναι τεχνική εκτίμηση και δεν αναπαράγει κατ’ ανάγκη την τραπεζική καρτέλα· επισημαίνεται αναλόγως.');
+      } else if (rateSourceRule === 'MANUAL_RATE') {
+        referenceDateRule = 'Χειροκίνητη καταχώρηση τιμών δείκτη';
+      } else {
+        referenceDateRule = null;
+        review('rate_config', 'Κανόνας πηγής επιτοκίου', 'Μη αναγνωρισμένος κανόνας πηγής επιτοκίου· απαιτείται έλεγχος.');
+      }
+
       regime = {
         kind: 'floating',
-        indexType: 'other',
+        indexType,
         indexLabel: null,
         spreadPercent,
-        referenceDateRule: null,
+        referenceDateRule,
         resetFrequencyMonths: null,
-        negativeEuriborPolicy: 'unknown',
+        // Locked policy: a negative index is always treated as zero
+        // (floor at 0) — the applied rate never drops below the spread.
+        negativeEuriborPolicy: 'floor_zero',
         rateHistory: [],
       };
-      review('rate_config', 'Δείκτης επιτοκίου', 'Κυμαινόμενο καθεστώς: ο δείκτης και η πολιτική αρνητικού δείκτη δεν έχουν προσδιοριστεί· απαιτείται έλεγχος.');
     }
   } else {
     review('rate_config', 'Καθεστώς επιτοκίου', 'Μη αναγνωρισμένο καθεστώς επιτοκίου· απαιτείται έλεγχος.');
