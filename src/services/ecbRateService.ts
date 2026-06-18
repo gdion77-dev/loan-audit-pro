@@ -59,15 +59,21 @@ const ECB_BASE = 'https://data-api.ecb.europa.eu/service/data';
  * used for Euribor so a contract fixing date can be matched precisely.
  * The ECB main refinancing rate is published as a level series.
  *
- * Verified key shapes:
- *   FM.D.U2.EUR.RT.MM.EURIBOR3MD_.HSTA  (daily 3M Euribor)
- *   FM.B.U2.EUR.4F.KR.MRR_FR.LEV        (ECB main refinancing, fixed rate)
+ * Frequency note: this ECB dataflow (FM) publishes Euribor at MONTHLY
+ * frequency ('M') — there is no daily ('D') variant here, so a daily
+ * key returns HTTP 404. We therefore use monthly observations. When a
+ * contract rule needs an exact daily fixing, the monthly value is an
+ * approximation and the study discloses this.
+ *
+ * Verified key shapes (no FM. prefix — the flow is already in the path):
+ *   M.U2.EUR.RT.MM.EURIBOR3MD_.HSTA  (monthly 3M Euribor)
+ *   B.U2.EUR.4F.KR.MRR_FR.LEV        (ECB main refinancing, fixed rate)
  */
 const SERIES: Record<EcbIndexCode, { flow: string; key: string; freqLabel: string }> = {
-  EURIBOR_1M: { flow: 'FM', key: 'D.U2.EUR.RT.MM.EURIBOR1MD_.HSTA', freqLabel: 'ημερήσια' },
-  EURIBOR_3M: { flow: 'FM', key: 'D.U2.EUR.RT.MM.EURIBOR3MD_.HSTA', freqLabel: 'ημερήσια' },
-  EURIBOR_6M: { flow: 'FM', key: 'D.U2.EUR.RT.MM.EURIBOR6MD_.HSTA', freqLabel: 'ημερήσια' },
-  EURIBOR_12M: { flow: 'FM', key: 'D.U2.EUR.RT.MM.EURIBOR1YD_.HSTA', freqLabel: 'ημερήσια' },
+  EURIBOR_1M: { flow: 'FM', key: 'M.U2.EUR.RT.MM.EURIBOR1MD_.HSTA', freqLabel: 'μηνιαία' },
+  EURIBOR_3M: { flow: 'FM', key: 'M.U2.EUR.RT.MM.EURIBOR3MD_.HSTA', freqLabel: 'μηνιαία' },
+  EURIBOR_6M: { flow: 'FM', key: 'M.U2.EUR.RT.MM.EURIBOR6MD_.HSTA', freqLabel: 'μηνιαία' },
+  EURIBOR_12M: { flow: 'FM', key: 'M.U2.EUR.RT.MM.EURIBOR1YD_.HSTA', freqLabel: 'μηνιαία' },
   ECB: { flow: 'FM', key: 'B.U2.EUR.4F.KR.MRR_FR.LEV', freqLabel: 'ανά μεταβολή' },
 };
 
@@ -219,4 +225,3 @@ export async function fetchEcbIndex(
     httpStatus: resp.status,
   };
 }
-
