@@ -14,6 +14,7 @@ import {
   createEmptyBankScheduleDraftRow,
   createEmptyActualPaymentDraftRow,
 } from './loanAuditDraftState';
+import { fieldValue } from './fieldState';
 
 /**
  * Immutably replaces one field within one draft section. Generic over
@@ -113,6 +114,71 @@ export function addActualPaymentDraftRow(
     actualPaymentsDraft: {
       ...state.actualPaymentsDraft,
       rows: [...state.actualPaymentsDraft.rows, row],
+    },
+  };
+}
+
+/** ISO date + N months, day clamped to month length. */
+function addMonthsClampedISO(isoDate: string, months: number): string {
+  const y = Number(isoDate.slice(0, 4));
+  const m = Number(isoDate.slice(5, 7));
+  const d = Number(isoDate.slice(8, 10));
+  const total = (y * 12 + (m - 1)) + months;
+  const targetY = Math.floor(total / 12);
+  const targetM = (total % 12) + 1;
+  const daysInTarget = new Date(Date.UTC(targetY, targetM, 0)).getUTCDate();
+  const clampedD = Math.min(d, daysInTarget);
+  return `${targetY}-${String(targetM).padStart(2, '0')}-${String(clampedD).padStart(2, '0')}`;
+}
+
+export interface BulkActualPaymentSpec {
+  readonly count: number;
+  readonly amountCents: number;
+  readonly firstDateISO: string;
+  readonly stepMonths: number;
+}
+
+/**
+ * Adds many identical actual payments at once: same amount, dates
+ * stepping by `stepMonths` from `firstDateISO`. When `scheduleRows`
+ * is provided, each generated payment is auto-matched to the schedule
+ * row that shares its due date. Unmatched dates are left unmatched (no
+ * silent assumption). Pure and immutable; no financial calculation.
+ */
+export function addManyActualPaymentDraftRows(
+  state: LoanAuditDraftState,
+  spec: BulkActualPaymentSpec,
+  scheduleRows?: ReadonlyArray<{ rowId: string; dueDateISO: string | null }>,
+): LoanAuditDraftState {
+  const count = Math.max(0, Math.floor(spec.count));
+  if (count === 0) return state;
+  const step = spec.stepMonths > 0 ? Math.floor(spec.stepMonths) : 1;
+
+  const byDate = new Map<string, string>();
+  for (const r of scheduleRows ?? []) {
+    if (r.dueDateISO !== null && !byDate.has(r.dueDateISO)) byDate.set(r.dueDateISO, r.rowId);
+  }
+
+  const newRows: ActualPaymentDraftRow[] = [];
+  for (let i = 0; i < count; i++) {
+    const id = `draft-payment-${++paymentRowSeq}`;
+    const dateISO = addMonthsClampedISO(spec.firstDateISO, i * step);
+    const base = createEmptyActualPaymentDraftRow(id);
+    const matchedRowId = byDate.get(dateISO) ?? null;
+    newRows.push({
+      ...base,
+      paymentDate: fieldValue<string>(dateISO, 'manual'),
+      amountCents: fieldValue<number>(spec.amountCents, 'manual'),
+      matchedScheduleRowId:
+        matchedRowId !== null ? fieldValue<string>(matchedRowId, 'manual') : base.matchedScheduleRowId,
+    });
+  }
+
+  return {
+    ...state,
+    actualPaymentsDraft: {
+      ...state.actualPaymentsDraft,
+      rows: [...state.actualPaymentsDraft.rows, ...newRows],
     },
   };
 }
