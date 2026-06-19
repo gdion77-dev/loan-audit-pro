@@ -276,7 +276,7 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
     setDraftState((prev) => updateDraftField(prev, 'recalculationSettingsDraft', field, next));
   };
   const onRecalcMoneyChange = (
-    field: 'feesAndPremiumsPerPeriodCents',
+    field: 'feesAndPremiumsPerPeriodCents' | 'balloonAmountCents',
     next: FieldState<number>,
   ): void => {
     setDraftState((prev) => updateDraftField(prev, 'recalculationSettingsDraft', field, next));
