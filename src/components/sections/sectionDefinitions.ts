@@ -16,7 +16,8 @@ export type SectionId =
   | 'recalc_settings'
   | 'comparison'
   | 'findings'
-  | 'report';
+  | 'report'
+  | 'saved_cases';
 
 export interface SectionDefinition {
   readonly id: SectionId;
@@ -73,5 +74,11 @@ export const SECTIONS: readonly SectionDefinition[] = [
     id: 'report',
     title: 'Μελέτη / PDF',
     explanation: 'Προεπισκόπηση της οικονομικής μελέτης και παραγωγή PDF.',
+  },
+  {
+    id: 'saved_cases',
+    title: 'Αποθηκευμένες Υποθέσεις',
+    explanation:
+      'Αποθήκευση, άνοιγμα και διαχείριση υποθέσεων. Εξαγωγή σε αρχείο για μεταφορά μεταξύ υπολογιστών (π.χ. μέσω συγχρονισμένου φακέλου cloud).',
   },
 ] as const;
