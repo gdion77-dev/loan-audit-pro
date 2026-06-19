@@ -166,6 +166,23 @@ function buildReportData(
     ...buildReconciliationFindings(pipelineResult.paymentReconciliationResult),
   ];
   const recalcRows = pipelineResult.recalcScheduleResult?.rows ?? [];
+  // Detect the schedule type from the discriminating fields of the recalc
+  // result, so the methodology label matches what was actually computed.
+  const recalcResult = pipelineResult.recalcScheduleResult;
+  const isBalloon =
+    recalcResult !== null &&
+    recalcResult !== undefined &&
+    'balloonAmountCents' in recalcResult &&
+    (recalcResult as { balloonAmountCents: number | null }).balloonAmountCents !== null;
+  const isReamortizing =
+    recalcResult !== null &&
+    recalcResult !== undefined &&
+    'recomputeCount' in recalcResult;
+  const programTypeLabel = isBalloon
+    ? 'Σταθερή μηνιαία καταβολή με εφάπαξ κεφάλαιο στη λήξη (balloon)'
+    : isReamortizing
+      ? 'Κυμαινόμενη τοκοχρεολυτική δόση (αναπροσαρμοζόμενη)'
+      : 'Σταθερή τοκοχρεολυτική δόση';
   // The applied annual rate is real engine output (per recalculated row),
   // not a re-derivation — every row in a fixed-rate schedule carries the
   // same value, so the first row is representative.
@@ -204,12 +221,12 @@ function buildReportData(
     bankTotal: eur(summary.totalBankInstallmentsCents),
     recalcRows: summary.comparedRowCount + summary.unmatchedRecalcRowCount,
     recalcUnmatched: summary.unmatchedRecalcRowCount,
-    recalcProgram: 'Σταθερή δόση',
+    recalcProgram: programTypeLabel,
     recalcTotal: eur(summary.totalRecalculatedInstallmentsCents),
     totalDiff: eur(summary.totalEconomicDifferenceCents),
 
     methodology: {
-      programType: 'Σταθερή τοκοχρεολυτική δόση',
+      programType: programTypeLabel,
       accrual: 'Στο ποσό που οφείλεται κάθε φορά',
       rate: 'Όπως ορίζει η σύμβαση',
       dayCount: '',
