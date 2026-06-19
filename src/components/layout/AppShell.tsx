@@ -159,10 +159,23 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
     return `${idx}${spread}${law128} — κυμαινόμενο`;
   };
 
+  const onAnalystNotesChange = (next: FieldState<string>): void => {
+    setDraftState((prev) => updateDraftField(prev, 'reportNotesDraft', 'analystNotes', next));
+  };
+
   const onOpenHtmlReport = (): void => {
     // Opens a professionally-formatted HTML report in a new tab for the
     // user to print to PDF. Reads stored results only; no recomputation.
-    const ok = openHtmlReport(pipelineResult, actualPaymentsAmortization, buildRateLabel());
+    const analystNotes =
+      draftState.reportNotesDraft.analystNotes.status === 'value'
+        ? draftState.reportNotesDraft.analystNotes.value
+        : undefined;
+    const ok = openHtmlReport(
+      pipelineResult,
+      actualPaymentsAmortization,
+      buildRateLabel(),
+      analystNotes ?? undefined,
+    );
     if (!ok) {
       setPdfBrowserMessage(
         'Δεν ήταν δυνατό το άνοιγμα της αναφοράς. Επιτρέψτε τα αναδυόμενα παράθυρα και εκτελέστε πρώτα τη μελέτη.',
@@ -439,6 +452,8 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
           onDownloadPdf={onDownloadPdf}
           onOpenHtmlReport={onOpenHtmlReport}
           pdfBrowserMessage={pdfBrowserMessage}
+          analystNotes={draftState.reportNotesDraft.analystNotes}
+          onAnalystNotesChange={onAnalystNotesChange}
         />
       );
     }
