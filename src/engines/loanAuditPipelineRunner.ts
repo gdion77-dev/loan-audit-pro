@@ -47,6 +47,11 @@ import {
   type ReamortizingScheduleResult,
 } from './reamortizingScheduleEngine';
 import {
+  buildBalloonSchedule,
+  type BalloonScheduleInput,
+  type BalloonScheduleResult,
+} from './balloonScheduleEngine';
+import {
   compareSchedules,
   type ScheduleComparisonResult,
   type MatchingMode,
@@ -109,7 +114,7 @@ export type PipelineStage =
 
 export type PipelineStatus = 'success' | 'requires_review' | 'missing_data';
 
-export type ScheduleMode = 'equal_principal' | 'equal_installment' | 'reamortizing';
+export type ScheduleMode = 'equal_principal' | 'equal_installment' | 'reamortizing' | 'balloon';
 
 export interface ComparisonOptions {
   readonly matchingMode?: MatchingMode;
@@ -132,7 +137,7 @@ export interface FindingsOptions {
 export interface LoanAuditPipelineInput {
   readonly caseInfo: CaseInfo;
   readonly scheduleMode: ScheduleMode;
-  readonly scheduleInput: EqualPrincipalScheduleInput | EqualInstallmentScheduleInput | ReamortizingScheduleInput;
+  readonly scheduleInput: EqualPrincipalScheduleInput | EqualInstallmentScheduleInput | ReamortizingScheduleInput | BalloonScheduleInput;
   readonly bankRows: readonly BankScheduleRow[];
   readonly actualPayments?: readonly ActualPayment[];
   readonly comparisonOptions?: ComparisonOptions;
@@ -153,7 +158,8 @@ export interface LoanAuditPipelineInput {
 export type RecalcScheduleResult =
   | EqualPrincipalScheduleResult
   | EqualInstallmentScheduleResult
-  | ReamortizingScheduleResult;
+  | ReamortizingScheduleResult
+  | BalloonScheduleResult;
 
 export interface LoanAuditPipelineResult {
   readonly status: PipelineStatus;
@@ -200,7 +206,9 @@ export function runLoanAuditPipeline(
       ? buildEqualPrincipalSchedule(input.scheduleInput as EqualPrincipalScheduleInput)
       : input.scheduleMode === 'reamortizing'
         ? buildReamortizingSchedule(input.scheduleInput as ReamortizingScheduleInput)
-        : buildEqualInstallmentSchedule(input.scheduleInput as EqualInstallmentScheduleInput);
+        : input.scheduleMode === 'balloon'
+          ? buildBalloonSchedule(input.scheduleInput as BalloonScheduleInput)
+          : buildEqualInstallmentSchedule(input.scheduleInput as EqualInstallmentScheduleInput);
   collect('schedule', recalcScheduleResult.auditEntries);
 
   const recalcRows: readonly RecalcRow[] = recalcScheduleResult.rows;
