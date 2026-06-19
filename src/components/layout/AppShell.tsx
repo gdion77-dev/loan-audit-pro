@@ -54,6 +54,7 @@ import { RecalculationSettingsSection } from '../sections/RecalculationSettingsS
 import { ComparisonSection } from '../sections/ComparisonSection';
 import { FindingsSection } from '../sections/FindingsSection';
 import { ReportSection } from '../sections/ReportSection';
+import { SavedCasesSection } from '../sections/SavedCasesSection';
 
 export interface AppShellProps {
   /** Optional initial section (used by tests). */
@@ -71,6 +72,8 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
   const [draftState, setDraftState] = useState<LoanAuditDraftState>(
     initialDraftState ?? createEmptyDraftState(),
   );
+  // Id of the saved case currently loaded (null = unsaved/new case).
+  const [currentCaseId, setCurrentCaseId] = useState<string | null>(null);
 
   // Draft validation summary, recomputed whenever the draft changes.
   // adaptDraftToDomain is a pure shaping/validation pass — it calls no
@@ -161,6 +164,17 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
 
   const onAnalystNotesChange = (next: FieldState<string>): void => {
     setDraftState((prev) => updateDraftField(prev, 'reportNotesDraft', 'analystNotes', next));
+  };
+
+  const onLoadCase = (draft: LoanAuditDraftState, caseId: string | null): void => {
+    // Loading a saved/imported case replaces the working draft and
+    // clears any prior study results (they belong to the old case).
+    setDraftState(draft);
+    setCurrentCaseId(caseId);
+    setPipelineResult(null);
+    setPipelineRunStatus('not_run');
+    setActualPaymentsAmortization(null);
+    setPdfBrowserMessage(null);
   };
 
   const onOpenHtmlReport = (): void => {
@@ -454,6 +468,15 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
           pdfBrowserMessage={pdfBrowserMessage}
           analystNotes={draftState.reportNotesDraft.analystNotes}
           onAnalystNotesChange={onAnalystNotesChange}
+        />
+      );
+    }
+    if (activeSection === 'saved_cases') {
+      return (
+        <SavedCasesSection
+          currentDraft={draftState}
+          currentCaseId={currentCaseId}
+          onLoadCase={onLoadCase}
         />
       );
     }
