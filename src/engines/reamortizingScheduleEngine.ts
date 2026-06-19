@@ -191,8 +191,8 @@ export function buildReamortizingSchedule(
     return emptyResult('missing_data');
   }
   const resetFreq = input.resetFrequencyMonths;
-  if (resetFreq === null) {
-    scheduleEntries.push(requiresReview(RA.RA_RESET_FREQ_INVALID, 'Ελλιπή δεδομένα: μη δηλωμένη συχνότητα αναπροσαρμογής δόσης (μήνες). Το πρόγραμμα δεν παράγεται.'));
+  if (resetFreq === null || resetFreq === undefined) {
+    scheduleEntries.push(requiresReview(RA.RA_RESET_FREQ_INVALID, 'Ελλιπή δεδομένα: μη δηλωμένη συχνότητα αναπροσαρμογής δόσης (μήνες). Δηλώστε τη συχνότητα (μηνιαία/τριμηνιαία/εξαμηνιαία/ετήσια) για να παραχθεί το πρόγραμμα.'));
     return emptyResult('missing_data');
   }
   if (!Number.isSafeInteger(resetFreq) || resetFreq <= 0) {
