@@ -27,7 +27,7 @@ export interface RecalculationSettingsSectionProps {
     next: FieldState<string>,
   ) => void;
   readonly onMoneyChange: (
-    field: 'feesAndPremiumsPerPeriodCents',
+    field: 'feesAndPremiumsPerPeriodCents' | 'balloonAmountCents',
     next: FieldState<number>,
   ) => void;
 }
@@ -39,6 +39,7 @@ export const RecalculationSettingsSection: React.FC<RecalculationSettingsSection
 }) => {
   const mode = draft.scheduleMode.status === 'value' ? draft.scheduleMode.value : null;
   const isReamortizing = mode === 'reamortizing';
+  const isBalloon = mode === 'balloon';
   return (
     <section className="lap-card" aria-label={def.title}>
       <h2 className="lap-card__title">{def.title}</h2>
@@ -59,6 +60,15 @@ export const RecalculationSettingsSection: React.FC<RecalculationSettingsSection
             options={INSTALLMENT_RESET_FREQUENCY_OPTIONS}
             field={draft.installmentResetFrequency}
             onChange={(next) => onSelectChange('installmentResetFrequency', next)}
+          />
+        ) : null}
+        {isBalloon ? (
+          <MoneyFieldStateControl
+            id="recalc-balloon"
+            label="Ποσό εφάπαξ καταβολής (balloon)"
+            field={draft.balloonAmountCents}
+            onChange={(next) => onMoneyChange('balloonAmountCents', next)}
+            placeholder="π.χ. 3.246,82"
           />
         ) : null}
         <SelectFieldStateControl
@@ -94,6 +104,19 @@ export const RecalculationSettingsSection: React.FC<RecalculationSettingsSection
           τόκους· η συνολική δόση μειώνεται σταδιακά. Επιλέξτε την όταν η σύμβαση ορίζει σταθερό
           χρεολύσιο.
         </p>
+        <p className="lap-field-help">
+          <strong>Δόση με υπόλοιπο (balloon):</strong> ένα μέρος της οφειλής αποπληρώνεται σε
+          κανονικές δόσεις και ένα υπόλοιπο ποσό καταβάλλεται εφάπαξ στη λήξη. Δηλώνετε ως
+          «Κεφάλαιο» το σύνολο (επ’ αυτού τρέχουν οι τόκοι) και ως «Ποσό εφάπαξ καταβολής» το
+          υπόλοιπο που πληρώνεται στο τέλος. Οι κανονικές δόσεις απομειώνουν το υπόλοιπο μέχρι το
+          ποσό αυτό· η τελευταία δόση το περιλαμβάνει.
+        </p>
+        {isBalloon ? (
+          <p className="lap-field-help">
+            Παράδειγμα: οφειλή 36.401 € με 3.246,82 € εφάπαξ στη λήξη σε 61 δόσεις → 60 σταθερές
+            δόσεις και μια τελευταία αυξημένη που περιλαμβάνει τις 3.246,82 €.
+          </p>
+        ) : null}
         {isReamortizing ? (
           <p className="lap-field-help">
             Η <strong>συχνότητα αναπροσαρμογής</strong> ορίζει κάθε πότε η τράπεζα ξαναϋπολογίζει
