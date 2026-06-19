@@ -15,6 +15,8 @@ import { SECTIONS } from './sectionDefinitions';
 import type { DraftStatus } from '../../ui-state/draftValidationSummary';
 import type { PipelineRunStatus } from '../../ui-state/pipelineExecutor';
 import type { LoanAuditPipelineResult } from '../../engines/loanAuditPipelineRunner';
+import type { FieldState } from '../../ui-state/fieldState';
+import { fieldValue, fieldUnknown } from '../../ui-state/fieldState';
 
 const def = SECTIONS.find((s) => s.id === 'report')!;
 
@@ -28,6 +30,9 @@ export interface ReportSectionProps {
   readonly onOpenHtmlReport?: () => void;
   /** Optional status/error message from browser PDF generation. */
   readonly pdfBrowserMessage?: string | null;
+  /** Free-text economic observations printed in the report. */
+  readonly analystNotes?: FieldState<string>;
+  readonly onAnalystNotesChange?: (next: FieldState<string>) => void;
 }
 
 function runStatusLabel(status: PipelineRunStatus): string {
@@ -55,6 +60,8 @@ export const ReportSection: React.FC<ReportSectionProps> = ({
   onDownloadPdf,
   onOpenHtmlReport,
   pdfBrowserMessage,
+  analystNotes,
+  onAnalystNotesChange,
 }) => {
   const ready = draftStatus === 'ready';
   const pdfBytesExist =
@@ -107,6 +114,30 @@ export const ReportSection: React.FC<ReportSectionProps> = ({
         <p className="lap-report-pdf-flag">
           PDF: {canDownload ? 'Διαθέσιμο' : 'Μη διαθέσιμο'}
         </p>
+      ) : null}
+
+      {onAnalystNotesChange ? (
+        <div style={{ marginTop: '16px' }}>
+          <label htmlFor="report-analyst-notes" style={{ display: 'block', fontWeight: 600, marginBottom: '6px' }}>
+            Παρατηρήσεις συντάκτη (τυπώνονται στην οικονομική έκθεση)
+          </label>
+          <p className="lap-field-help" style={{ marginTop: 0, marginBottom: '6px' }}>
+            Προαιρετικό ελεύθερο κείμενο με τις δικές σας οικονομικές παρατηρήσεις. Εμφανίζεται στην
+            τελευταία σελίδα «Οικονομική Έκθεση» του PDF.
+          </p>
+          <textarea
+            id="report-analyst-notes"
+            value={analystNotes && analystNotes.status === 'value' ? analystNotes.value : ''}
+            onChange={(e: { target: { value: string } }) =>
+              onAnalystNotesChange(
+                e.target.value === '' ? fieldUnknown<string>('manual') : fieldValue<string>(e.target.value, 'manual'),
+              )
+            }
+            rows={6}
+            placeholder="π.χ. σχόλια για το συνολικό κόστος, τις αποκλίσεις, ή προτάσεις διευθέτησης…"
+            style={{ width: '100%', padding: '10px', fontSize: '13px', fontFamily: 'inherit', borderRadius: '8px', border: '1px solid var(--hair, #ddd)', resize: 'vertical' }}
+          />
+        </div>
       ) : null}
 
       {pipelineResult !== null && canDownload ? (
