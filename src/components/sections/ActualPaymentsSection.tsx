@@ -10,6 +10,7 @@
  * conversion to domain ActualPayment (deferred to a later step).
  */
 import React from 'react';
+import { useState } from 'react';
 import { TextFieldStateControl } from '../fields/TextFieldStateControl';
 import { DateFieldStateControl } from '../fields/DateFieldStateControl';
 import { MoneyFieldStateControl } from '../fields/MoneyFieldStateControl';
@@ -32,6 +33,12 @@ export interface ActualPaymentsSectionProps {
   readonly bankScheduleDraft?: BankScheduleDraft;
   readonly pipelineResult?: LoanAuditPipelineResult | null;
   readonly onAddRow: () => void;
+  readonly onBulkAdd: (spec: {
+    count: number;
+    amountCents: number;
+    firstDateISO: string;
+    stepMonths: number;
+  }) => void;
   readonly onRemoveRow: (index: number) => void;
   readonly onRowTextChange: (
     index: number,
@@ -96,12 +103,49 @@ export const ActualPaymentsSection: React.FC<ActualPaymentsSectionProps> = ({
   bankScheduleDraft,
   pipelineResult,
   onAddRow,
+  onBulkAdd,
   onRemoveRow,
   onRowTextChange,
   onRowMoneyChange,
 }) => {
   const scheduleOptions = buildScheduleOptions(bankScheduleDraft, pipelineResult);
   const hasSchedule = scheduleOptions.length > 1;
+
+  // Local state for the bulk-add mini form (not part of the draft).
+  const [bulkCount, setBulkCount] = useState('');
+  const [bulkAmount, setBulkAmount] = useState('');
+  const [bulkFirstDate, setBulkFirstDate] = useState('');
+  const [bulkStep, setBulkStep] = useState('1');
+
+  const parseAmountToCents = (s: string): number | null => {
+    const cleaned = s.replace(/\./g, '').replace(',', '.').trim();
+    if (cleaned === '' || !/^\d+(\.\d{1,2})?$/.test(cleaned)) return null;
+    return Math.round(Number(cleaned) * 100);
+  };
+
+  const bulkCountN = Number(bulkCount);
+  const bulkAmountCents = parseAmountToCents(bulkAmount);
+  const bulkStepN = Number(bulkStep);
+  const bulkValid =
+    Number.isInteger(bulkCountN) && bulkCountN > 0 && bulkCountN <= 600 &&
+    bulkAmountCents !== null && bulkAmountCents > 0 &&
+    /^\d{4}-\d{2}-\d{2}$/.test(bulkFirstDate) &&
+    Number.isInteger(bulkStepN) && bulkStepN > 0;
+
+  const doBulkAdd = (): void => {
+    if (!bulkValid || bulkAmountCents === null) return;
+    onBulkAdd({
+      count: bulkCountN,
+      amountCents: bulkAmountCents,
+      firstDateISO: bulkFirstDate,
+      stepMonths: bulkStepN,
+    });
+    setBulkCount('');
+    setBulkAmount('');
+    setBulkFirstDate('');
+    setBulkStep('1');
+  };
+
   return (
   <section className="lap-card" aria-label={def.title}>
     <h2 className="lap-card__title">{def.title}</h2>
@@ -121,8 +165,45 @@ export const ActualPaymentsSection: React.FC<ActualPaymentsSectionProps> = ({
       Προσθήκη καταβολής
     </button>
 
+    <div className="lap-bulk-add" style={{ marginTop: '14px', padding: '12px', border: '1px solid var(--hair, #e2e2e2)', borderRadius: '8px' }}>
+      <h3 className="lap-card__subtitle" style={{ marginTop: 0 }}>Μαζική προσθήκη ίδιων καταβολών</h3>
+      <p className="lap-field-help">
+        Προσθέτει πολλές ίδιες καταβολές μονομιάς (ίδιο ποσό, μηνιαία βήματα). Αν έχει παραχθεί
+        δοσολόγιο, κάθε καταβολή αντιστοιχίζεται αυτόματα στη δόση με την ίδια ημερομηνία.
+      </p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'flex-end' }}>
+        <label style={{ display: 'flex', flexDirection: 'column', fontSize: '12px', gap: '3px' }}>
+          Πλήθος
+          <input type="text" inputMode="numeric" value={bulkCount}
+            onChange={(e: { target: { value: string } }) => setBulkCount(e.target.value)}
+            placeholder="π.χ. 24" style={{ width: '80px', padding: '6px' }} />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', fontSize: '12px', gap: '3px' }}>
+          Ποσό (€)
+          <input type="text" inputMode="decimal" value={bulkAmount}
+            onChange={(e: { target: { value: string } }) => setBulkAmount(e.target.value)}
+            placeholder="π.χ. 650,00" style={{ width: '110px', padding: '6px' }} />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', fontSize: '12px', gap: '3px' }}>
+          Ημ/νία 1ης
+          <input type="date" value={bulkFirstDate}
+            onChange={(e: { target: { value: string } }) => setBulkFirstDate(e.target.value)}
+            style={{ padding: '6px' }} />
+        </label>
+        <label style={{ display: 'flex', flexDirection: 'column', fontSize: '12px', gap: '3px' }}>
+          Βήμα (μήνες)
+          <input type="text" inputMode="numeric" value={bulkStep}
+            onChange={(e: { target: { value: string } }) => setBulkStep(e.target.value)}
+            style={{ width: '80px', padding: '6px' }} />
+        </label>
+        <button type="button" className="lap-btn lap-btn--secondary" onClick={doBulkAdd} disabled={!bulkValid}>
+          Προσθήκη {bulkValid ? `${bulkCountN} καταβολών` : ''}
+        </button>
+      </div>
+    </div>
+
     {draft.rows.length === 0 ? (
-      <p className="lap-empty-state">Δεν έχουν καταχωριστεί πραγματικές καταβολές.</p>
+      <p className="lap-empty-state">Δεν έχουν καταχωρηθεί πραγματικές καταβολές.</p>
     ) : (
       <table className="lap-table">
         <thead>
