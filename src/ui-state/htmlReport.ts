@@ -63,8 +63,8 @@ function isoToGreek(iso: string): string {
 }
 
 const SEVERITY_LABEL: Record<string, string> = {
-  informational: 'ΠΛΗΡΟΦΟΡΙΑΚΟ',
-  requires_review: 'ΑΠΑΙΤΕΙΤΑΙ ΕΛΕΓΧΟΣ',
+  informational: 'ΕΝΗΜΕΡΩΣΗ',
+  requires_review: 'ΧΡΕΙΑΖΕΤΑΙ ΕΛΕΓΧΟ',
   attention: 'ΠΡΟΣΟΧΗ',
 };
 
@@ -210,11 +210,11 @@ function buildReportData(
 
     methodology: {
       programType: 'Σταθερή τοκοχρεολυτική δόση',
-      accrual: 'Επί ανεξόφλητου υπολοίπου',
-      rate: 'Βάσει δηλωμένων όρων',
+      accrual: 'Στο ποσό που οφείλεται κάθε φορά',
+      rate: 'Όπως ορίζει η σύμβαση',
       dayCount: '',
-      law12875: 'Βάσει δηλωμένων όρων',
-      rounding: 'half-up',
+      law12875: 'Όπως ορίζει η σύμβαση',
+      rounding: 'Εμπορική',
     },
 
     actualPaymentsNote: buildActualPaymentsNote(pipelineResult),
