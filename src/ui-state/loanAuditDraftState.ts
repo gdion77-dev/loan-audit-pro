@@ -141,6 +141,8 @@ export interface RecalculationSettingsDraft {
   readonly feesAndPremiumsPerPeriodCents: FieldState<number>;
   /** Reset frequency for the re-amortizing schedule mode. */
   readonly installmentResetFrequency: FieldState<string>;
+  /** Residual lump sum paid with the final installment (balloon mode). */
+  readonly balloonAmountCents: FieldState<number>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -203,6 +205,7 @@ export function createEmptyDraftState(): LoanAuditDraftState {
       roundingMode: fieldUnknown<string>('manual'),
       feesAndPremiumsPerPeriodCents: fieldUnknown<number>('manual'),
       installmentResetFrequency: fieldUnknown<string>('manual'),
+      balloonAmountCents: fieldUnknown<number>('manual'),
     },
   };
 }
@@ -308,6 +311,7 @@ export const SCHEDULE_MODE_OPTIONS: readonly DraftSelectOption[] = [
   { code: 'equal_installment', label: 'Σταθερή τοκοχρεολυτική δόση (σταθερό επιτόκιο)' },
   { code: 'reamortizing', label: 'Κυμαινόμενη τοκοχρεολυτική δόση (αναπροσαρμοζόμενη)' },
   { code: 'equal_principal', label: 'Ίση δόση κεφαλαίου (σταθερό χρεολύσιο)' },
+  { code: 'balloon', label: 'Δόση με υπόλοιπο (balloon)' },
   { code: 'unknown', label: 'Άγνωστο', unknown: true },
 ] as const;
 
