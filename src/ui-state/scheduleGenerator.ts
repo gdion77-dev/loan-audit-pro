@@ -22,6 +22,7 @@ import type { RecalcRow } from '../domain/scheduleTypes';
 import type { RoundingMode } from '../engines/interestAccrualEngine';
 import { buildEqualInstallmentSchedule } from '../engines/equalInstallmentScheduleEngine';
 import { buildEqualPrincipalSchedule } from '../engines/equalPrincipalScheduleEngine';
+import { buildReamortizingSchedule } from '../engines/reamortizingScheduleEngine';
 
 export const GENERATED_ROW_NOTE = 'Τεχνικά παραγόμενο βάσει δηλωμένων όρων';
 
@@ -167,7 +168,11 @@ export function generateScheduleRows(
   }
 
   const scheduleMode = settings.scheduleMode;
-  if (scheduleMode !== 'equal_installment' && scheduleMode !== 'equal_principal') {
+  if (
+    scheduleMode !== 'equal_installment' &&
+    scheduleMode !== 'equal_principal' &&
+    scheduleMode !== 'reamortizing'
+  ) {
     return {
       status: 'unsupported',
       rows: [],
@@ -204,7 +209,12 @@ export function generateScheduleRows(
   const engineResult =
     scheduleMode === 'equal_installment'
       ? buildEqualInstallmentSchedule(baseInput)
-      : buildEqualPrincipalSchedule(baseInput);
+      : scheduleMode === 'reamortizing'
+        ? buildReamortizingSchedule({
+            ...baseInput,
+            resetFrequencyMonths: settings.resetFrequencyMonths,
+          })
+        : buildEqualPrincipalSchedule(baseInput);
 
   // Surface the engine's own neutral audit/warning messages (read-only).
   const engineMessages = engineResult.auditEntries
