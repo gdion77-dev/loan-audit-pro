@@ -110,6 +110,9 @@ export function buildPipelineInputFromAdapter(
     rateConfig,
     dayCountConvention: rateConfig.dayCount,
     feesAndPremiumsPerPeriodCents: recalculationSettings.feesAndPremiumsPerPeriodCents,
+    ...(scheduleMode === 'reamortizing'
+      ? { resetFrequencyMonths: recalculationSettings.resetFrequencyMonths ?? null }
+      : {}),
     ...(roundingMode !== null ? { roundingMode } : {}),
     currency,
   };
@@ -147,7 +150,12 @@ export function buildPipelineInputFromAdapter(
       ? ` Για ${proj.projectedCount} μελλοντικές δόσεις χρησιμοποιήθηκε η τελευταία δημοσιευμένη τιμή δείκτη (${proj.lastPublishedValuePercent}% της ${proj.lastPublishedDate}).`
       : '';
   const methodology: ReportMethodologyInput = {
-    scheduleType: scheduleMode === 'equal_principal' ? 'ίση δόση κεφαλαίου' : 'σταθερή τοκοχρεολυτική δόση',
+    scheduleType:
+      scheduleMode === 'equal_principal'
+        ? 'ίση δόση κεφαλαίου'
+        : scheduleMode === 'reamortizing'
+          ? 'κυμαινόμενη τοκοχρεολυτική δόση (αναπροσαρμοζόμενη)'
+          : 'σταθερή τοκοχρεολυτική δόση',
     rateDescription: rateText,
     dayCountConvention: rateConfig.dayCount,
     law128Status: law128Text,
