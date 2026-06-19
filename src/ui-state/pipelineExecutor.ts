@@ -113,6 +113,9 @@ export function buildPipelineInputFromAdapter(
     ...(scheduleMode === 'reamortizing'
       ? { resetFrequencyMonths: recalculationSettings.resetFrequencyMonths ?? null }
       : {}),
+    ...(scheduleMode === 'balloon'
+      ? { balloonAmountCents: recalculationSettings.balloonAmountCents ?? null }
+      : {}),
     ...(roundingMode !== null ? { roundingMode } : {}),
     currency,
   };
@@ -155,7 +158,9 @@ export function buildPipelineInputFromAdapter(
         ? 'ίση δόση κεφαλαίου'
         : scheduleMode === 'reamortizing'
           ? 'κυμαινόμενη τοκοχρεολυτική δόση (αναπροσαρμοζόμενη)'
-          : 'σταθερή τοκοχρεολυτική δόση',
+          : scheduleMode === 'balloon'
+            ? 'δόση με υπόλοιπο (balloon)'
+            : 'σταθερή τοκοχρεολυτική δόση',
     rateDescription: rateText,
     dayCountConvention: rateConfig.dayCount,
     law128Status: law128Text,
