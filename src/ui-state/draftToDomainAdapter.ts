@@ -61,11 +61,13 @@ export interface PreparedLoanTerms {
 
 /** Prepared recalculation settings object. */
 export interface PreparedRecalculationSettings {
-  readonly scheduleMode: 'equal_principal' | 'equal_installment' | 'reamortizing';
+  readonly scheduleMode: 'equal_principal' | 'equal_installment' | 'reamortizing' | 'balloon';
   readonly roundingMode: string | null;
   readonly feesAndPremiumsPerPeriodCents: number | null;
   /** Months between installment recomputations (re-amortizing mode). */
   readonly resetFrequencyMonths: number | null;
+  /** Residual lump sum paid with the final installment (balloon mode). */
+  readonly balloonAmountCents: number | null;
 }
 
 export interface DraftToDomainResult {
@@ -433,13 +435,14 @@ export function adaptDraftToDomain(
   const roundingModeCode = readString(rs.roundingMode);
   const feesCents = readNumber(rs.feesAndPremiumsPerPeriodCents);
 
-  let scheduleMode: 'equal_principal' | 'equal_installment' | 'reamortizing' | null = null;
+  let scheduleMode: 'equal_principal' | 'equal_installment' | 'reamortizing' | 'balloon' | null = null;
   if (scheduleModeCode === null || scheduleModeCode === 'unknown') {
     miss('recalc_settings', 'Τύπος επανυπολογισμού', 'Ελλείπει ο τύπος επανυπολογισμού.');
   } else if (
     scheduleModeCode === 'equal_principal' ||
     scheduleModeCode === 'equal_installment' ||
-    scheduleModeCode === 'reamortizing'
+    scheduleModeCode === 'reamortizing' ||
+    scheduleModeCode === 'balloon'
   ) {
     scheduleMode = scheduleModeCode;
   } else {
@@ -467,9 +470,16 @@ export function adaptDraftToDomain(
     }
   }
 
+  // Balloon amount (balloon mode only). Required when that mode is selected.
+  const balloonMoney = readMoney(rs.balloonAmountCents, currency);
+  const balloonAmountCents = balloonMoney === null ? null : balloonMoney.cents;
+  if (scheduleMode === 'balloon' && balloonAmountCents === null) {
+    review('recalc_settings', 'Ποσό εφάπαξ καταβολής (balloon)', 'Επιλέχθηκε δόση με υπόλοιπο (balloon) χωρίς ποσό εφάπαξ καταβολής· δηλώστε το ποσό που καταβάλλεται εφάπαξ στη λήξη.');
+  }
+
   const recalculationSettings: PreparedRecalculationSettings | null =
     scheduleMode !== null
-      ? { scheduleMode, roundingMode, feesAndPremiumsPerPeriodCents: feesCents, resetFrequencyMonths }
+      ? { scheduleMode, roundingMode, feesAndPremiumsPerPeriodCents: feesCents, resetFrequencyMonths, balloonAmountCents }
       : null;
 
   /* --- case info object (only when all critical fields present) --------- */
