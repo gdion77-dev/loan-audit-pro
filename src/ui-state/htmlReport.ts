@@ -156,6 +156,7 @@ function buildReportData(
   pipelineResult: LoanAuditPipelineResult,
   actualPaymentsAmortization?: ActualPaymentsAmortizationResult | null,
   rateLabel?: string,
+  analystNotes?: string,
 ): Record<string, unknown> | null {
   const caseInfo = pipelineResult.reportModelResult?.reportModel?.caseInfo ?? null;
   const summary = pipelineResult.comparisonResult?.summary ?? null;
@@ -236,6 +237,47 @@ function buildReportData(
     },
 
     actualPaymentsNote: buildActualPaymentsNote(pipelineResult),
+
+    economicReport: (() => {
+      const sched = pipelineResult.recalcScheduleResult;
+      const amort = actualPaymentsAmortization ?? null;
+      const totalInterest = sched && 'totalInterestCents' in sched ? sched.totalInterestCents : null;
+      const totalPrincipal = sched && 'totalPrincipalCents' in sched ? sched.totalPrincipalCents : null;
+      const totalInstallments = sched && 'totalInstallmentsCents' in sched ? sched.totalInstallmentsCents : null;
+      const balloon =
+        sched && 'balloonAmountCents' in sched
+          ? (sched as { balloonAmountCents: number | null }).balloonAmountCents
+          : null;
+      return {
+        // Loan / settlement figures
+        principal: eur(caseInfo.principal?.cents ?? null),
+        termMonths: caseInfo.termMonths,
+        programType: programTypeLabel,
+        balloon: balloon === null ? null : eur(balloon),
+        // Recalculated totals (independent calculation)
+        totalInterest: totalInterest === null ? null : eur(totalInterest),
+        totalPrincipal: totalPrincipal === null ? null : eur(totalPrincipal),
+        totalCost: totalInstallments === null ? null : eur(totalInstallments),
+        // Comparison with bank figures
+        bankTotal: eur(summary.totalBankInstallmentsCents),
+        recalcTotal: eur(summary.totalRecalculatedInstallmentsCents),
+        economicDiff: eur(summary.totalEconomicDifferenceCents),
+        interestDiff: eur(summary.totalInterestDifferenceCents),
+        capitalDiff: eur(summary.totalPrincipalDifferenceCents),
+        comparedPeriods: summary.comparedRowCount,
+        deviationPeriods: summary.rowsRequiringReviewCount,
+        // Actual payments vs schedule (if available)
+        overduePrincipal: amort ? eur(amort.finalOverduePrincipalCents) : null,
+        unpaidInterest: amort ? eur(amort.finalUnpaidInterestCents) : null,
+        defaultInterest:
+          amort && amort.totalLateInterestCents !== null ? eur(amort.totalLateInterestCents) : null,
+        actualBalance:
+          amort && amort.finalActualBalanceCents !== null ? eur(amort.finalActualBalanceCents) : null,
+        // Analyst free-text observations
+        analystNotes: analystNotes && analystNotes.trim() !== '' ? analystNotes.trim() : null,
+      };
+    })(),
+
     findings: findings.map((f) => {
       const amountStr =
         f.amountCents === null ? '—' : `${eur(f.amountCents).toFixed(2).replace('.', ',')} €`;
@@ -268,11 +310,12 @@ export function buildHtmlReport(
   pipelineResult: LoanAuditPipelineResult | null,
   actualPaymentsAmortization?: ActualPaymentsAmortizationResult | null,
   rateLabel?: string,
+  analystNotes?: string,
 ): HtmlReportResult {
   if (pipelineResult === null) {
     return { status: 'no_data', html: '', message: 'Δεν υπάρχουν διαθέσιμα δεδομένα μελέτης.' };
   }
-  const data = buildReportData(pipelineResult, actualPaymentsAmortization, rateLabel);
+  const data = buildReportData(pipelineResult, actualPaymentsAmortization, rateLabel, analystNotes);
   if (data === null) {
     return {
       status: 'no_data',
@@ -292,8 +335,9 @@ export function openHtmlReport(
   pipelineResult: LoanAuditPipelineResult | null,
   actualPaymentsAmortization?: ActualPaymentsAmortizationResult | null,
   rateLabel?: string,
+  analystNotes?: string,
 ): boolean {
-  const built = buildHtmlReport(pipelineResult, actualPaymentsAmortization, rateLabel);
+  const built = buildHtmlReport(pipelineResult, actualPaymentsAmortization, rateLabel, analystNotes);
   if (built.status !== 'ok') return false;
   if (typeof window === 'undefined' || typeof document === 'undefined') return false;
   const win = window.open('', '_blank');
