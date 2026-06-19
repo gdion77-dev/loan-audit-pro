@@ -149,6 +149,11 @@ export interface RecalculationSettingsDraft {
 /* Aggregate draft state                                               */
 /* ------------------------------------------------------------------ */
 
+export interface ReportNotesDraft {
+  /** Free-text economic observations written by the analyst (printed in the report). */
+  readonly analystNotes: FieldState<string>;
+}
+
 export interface LoanAuditDraftState {
   readonly caseInfoDraft: CaseInfoDraft;
   readonly loanTermsDraft: LoanTermsDraft;
@@ -156,6 +161,7 @@ export interface LoanAuditDraftState {
   readonly bankScheduleDraft: BankScheduleDraft;
   readonly actualPaymentsDraft: ActualPaymentsDraft;
   readonly recalculationSettingsDraft: RecalculationSettingsDraft;
+  readonly reportNotesDraft: ReportNotesDraft;
 }
 
 /**
@@ -206,6 +212,9 @@ export function createEmptyDraftState(): LoanAuditDraftState {
       feesAndPremiumsPerPeriodCents: fieldUnknown<number>('manual'),
       installmentResetFrequency: fieldUnknown<string>('manual'),
       balloonAmountCents: fieldUnknown<number>('manual'),
+    },
+    reportNotesDraft: {
+      analystNotes: fieldUnknown<string>('manual'),
     },
   };
 }
