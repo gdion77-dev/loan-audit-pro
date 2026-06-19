@@ -40,6 +40,7 @@ import { fetchEcbIndex, type EcbIndexCode, type EcbFetchStatus } from '../../ser
   removeBankScheduleDraftRow,
   updateBankScheduleDraftRowField,
   addActualPaymentDraftRow,
+  addManyActualPaymentDraftRows,
   removeActualPaymentDraftRow,
   updateActualPaymentDraftRowField,
 } from '../../ui-state/draftUpdates';
@@ -331,6 +332,20 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
   const onPaymentAddRow = (): void => {
     setDraftState((prev) => addActualPaymentDraftRow(prev));
   };
+  const onPaymentBulkAdd = (spec: {
+    count: number;
+    amountCents: number;
+    firstDateISO: string;
+    stepMonths: number;
+  }): void => {
+    // Pass the generated schedule rows so each payment auto-matches the
+    // installment that shares its due date.
+    const scheduleRows = draftState.bankScheduleDraft.rows.map((r) => ({
+      rowId: r.rowId.status === 'value' && r.rowId.value !== null ? r.rowId.value : '',
+      dueDateISO: r.dueDate.status === 'value' ? r.dueDate.value : null,
+    }));
+    setDraftState((prev) => addManyActualPaymentDraftRows(prev, spec, scheduleRows));
+  };
   const onPaymentRemoveRow = (index: number): void => {
     setDraftState((prev) => removeActualPaymentDraftRow(prev, index));
   };
@@ -407,6 +422,7 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
           bankScheduleDraft={draftState.bankScheduleDraft}
           pipelineResult={pipelineResult}
           onAddRow={onPaymentAddRow}
+          onBulkAdd={onPaymentBulkAdd}
           onRemoveRow={onPaymentRemoveRow}
           onRowTextChange={onPaymentRowTextChange}
           onRowMoneyChange={onPaymentRowMoneyChange}
