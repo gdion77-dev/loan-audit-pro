@@ -192,6 +192,7 @@ function buildReportData(
   const amortization = recalcRows.map((r, i) => ({
     month: i + 1,
     date: r.dueDate ? isoToGreek(r.dueDate) : '',
+    installment: eur(r.installment?.cents ?? null),
     balance: eur(r.closingBalance?.cents ?? null),
     interest: eur(r.interest?.cents ?? null),
     principal: eur(r.principal?.cents ?? null),
