@@ -148,6 +148,15 @@ export interface ActualPaymentsAmortizationConfig {
    * difference quantifies the disputed insurance-interest component.
    */
   readonly accrueDefaultInterestOnExtraCharges?: boolean;
+  /**
+   * Allocation order for the current period's extra charges relative to
+   * current principal. Default false → charges settled AFTER current
+   * principal (strict ΑΚ 423 capital-priority). True → charges settled
+   * BEFORE current principal, reproducing the servicer (Cepal) practice
+   * where insurance/fees are deducted first and the shortfall falls on
+   * capital instead.
+   */
+  readonly chargesPaidBeforePrincipal?: boolean;
   readonly currency?: CurrencyCode;
 }
 
@@ -296,6 +305,9 @@ export function buildActualPaymentsAmortization(
   // principal (caller's stated contractual treatment). False isolates
   // the conservative scenario.
   const chargesAccrue = config.accrueDefaultInterestOnExtraCharges !== false;
+  // Default false: current principal is settled before current charges
+  // (capital priority). True reproduces the servicer order (charges first).
+  const chargesFirst = config.chargesPaidBeforePrincipal === true;
   const anchorDate = dueInstallments[0]!.dueDate;
 
   let runningPrincipalCents = config.openingPrincipalCents;
@@ -465,18 +477,25 @@ export function buildActualPaymentsAmortization(
     remaining -= toOverdueExtraCharges;
     const overdueExtraChargesStillUnpaid = overdueExtraChargesCents - toOverdueExtraCharges;
 
-    // (6) current principal
-    const toCurrentPrincipal = Math.min(remaining, due.principalCents);
-    remaining -= toCurrentPrincipal;
-    const currentPrincipalStillUnpaid = due.principalCents - toCurrentPrincipal;
-
-    // (6b) current extra charges (insurance, legal, etc.). Per the user's
-    // contractual treatment these behave like principal: if unpaid they
-    // roll into overdue principal and accrue default interest the same
-    // way. They are settled AFTER this period's scheduled principal.
+    // (6) and (6b): current principal and current extra charges. The
+    // ORDER between them is configurable. Strict capital-priority pays
+    // principal first (charges last); the servicer order pays charges
+    // first, pushing the shortfall onto capital.
     const extraChargesDue = due.extraChargesCents ?? 0;
-    const toExtraCharges = Math.min(remaining, extraChargesDue);
-    remaining -= toExtraCharges;
+    let toCurrentPrincipal: number;
+    let toExtraCharges: number;
+    if (chargesFirst) {
+      toExtraCharges = Math.min(remaining, extraChargesDue);
+      remaining -= toExtraCharges;
+      toCurrentPrincipal = Math.min(remaining, due.principalCents);
+      remaining -= toCurrentPrincipal;
+    } else {
+      toCurrentPrincipal = Math.min(remaining, due.principalCents);
+      remaining -= toCurrentPrincipal;
+      toExtraCharges = Math.min(remaining, extraChargesDue);
+      remaining -= toExtraCharges;
+    }
+    const currentPrincipalStillUnpaid = due.principalCents - toCurrentPrincipal;
     const extraChargesStillUnpaid = extraChargesDue - toExtraCharges;
 
     const overpaymentCents = remaining; // paid beyond all obligations
