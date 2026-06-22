@@ -254,14 +254,29 @@ function buildAmortizationInputs(
   // treated by the engine as cleanly paid on time (no arrears).
   const rowsWithRecordedPayment = new Set<string>(payments.map((p) => p.matchedRowId));
 
-  const due: DueInstallment[] = recalcRows.map((r) => ({
-    rowId: r.rowId,
-    dueDate: r.dueDate,
-    installmentCents: r.installment.cents,
-    interestCents: r.interest.cents,
-    principalCents: r.principal.cents,
-    hasRecordedException: rowsWithRecordedPayment.has(r.rowId),
-  }));
+  // Sum extra charges by year-month, then attach each period's total to
+  // the due installment that falls in the same month. Charges that don't
+  // line up with any installment month are ignored here (they have no
+  // period to attach to); the engine treats them via the matched row.
+  const extraByMonth = new Map<string, number>();
+  for (const c of adapted.extraCharges) {
+    const ym = c.dateISO.slice(0, 7);
+    extraByMonth.set(ym, (extraByMonth.get(ym) ?? 0) + c.amountCents);
+  }
+
+  const due: DueInstallment[] = recalcRows.map((r) => {
+    const ym = r.dueDate.slice(0, 7);
+    const extra = extraByMonth.get(ym) ?? 0;
+    return {
+      rowId: r.rowId,
+      dueDate: r.dueDate,
+      installmentCents: r.installment.cents,
+      interestCents: r.interest.cents,
+      principalCents: r.principal.cents,
+      hasRecordedException: rowsWithRecordedPayment.has(r.rowId) || extra > 0,
+      ...(extra > 0 ? { extraChargesCents: extra } : {}),
+    };
+  });
 
   const openingPrincipalCents = adapted.loanTerms?.principalCents ?? firstRow.openingBalance.cents;
   const dayCountConvention = adapted.rateConfig !== null ? adapted.rateConfig.dayCount : 'unknown';

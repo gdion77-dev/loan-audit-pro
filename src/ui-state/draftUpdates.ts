@@ -9,10 +9,12 @@ import type {
   LoanAuditDraftState,
   BankScheduleDraftRow,
   ActualPaymentDraftRow,
+  ExtraChargeDraftRow,
 } from './loanAuditDraftState';
 import {
   createEmptyBankScheduleDraftRow,
   createEmptyActualPaymentDraftRow,
+  createEmptyExtraChargeDraftRow,
 } from './loanAuditDraftState';
 import { fieldValue } from './fieldState';
 
@@ -224,4 +226,47 @@ export function updateActualPaymentDraftRowField<F extends keyof ActualPaymentDr
     ...state,
     actualPaymentsDraft: { ...state.actualPaymentsDraft, rows },
   };
+}
+
+/* ------------------------------------------------------------------ */
+/* Extra charges (insurance, legal, etc.)                             */
+/* ------------------------------------------------------------------ */
+
+let extraChargeRowSeq = 0;
+
+/** Appends an empty extra-charge row. */
+export function addExtraChargeDraftRow(state: LoanAuditDraftState): LoanAuditDraftState {
+  const id = `draft-charge-${++extraChargeRowSeq}`;
+  const row = createEmptyExtraChargeDraftRow(id);
+  return {
+    ...state,
+    extraChargesDraft: {
+      ...state.extraChargesDraft,
+      rows: [...state.extraChargesDraft.rows, row],
+    },
+  };
+}
+
+/** Removes the extra-charge row at the given index (no-op if out of range). */
+export function removeExtraChargeDraftRow(
+  state: LoanAuditDraftState,
+  index: number,
+): LoanAuditDraftState {
+  if (index < 0 || index >= state.extraChargesDraft.rows.length) return state;
+  const rows = state.extraChargesDraft.rows.filter((_, i) => i !== index);
+  return { ...state, extraChargesDraft: { ...state.extraChargesDraft, rows } };
+}
+
+/** Immutably updates one field of one extra-charge row. */
+export function updateExtraChargeDraftRowField<F extends keyof ExtraChargeDraftRow>(
+  state: LoanAuditDraftState,
+  index: number,
+  field: F,
+  value: ExtraChargeDraftRow[F],
+): LoanAuditDraftState {
+  if (index < 0 || index >= state.extraChargesDraft.rows.length) return state;
+  const rows = state.extraChargesDraft.rows.map((row, i) =>
+    i === index ? { ...row, [field]: value } : row,
+  );
+  return { ...state, extraChargesDraft: { ...state.extraChargesDraft, rows } };
 }

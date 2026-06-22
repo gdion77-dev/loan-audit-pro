@@ -70,6 +70,13 @@ export interface PreparedRecalculationSettings {
   readonly balloonAmountCents: number | null;
 }
 
+/** One prepared extra charge (date + amount + label). */
+export interface PreparedExtraCharge {
+  readonly dateISO: string;
+  readonly amountCents: number;
+  readonly description: string | null;
+}
+
 export interface DraftToDomainResult {
   readonly status: DraftStatus;
   readonly caseInfo: CaseInfo | null;
@@ -78,6 +85,8 @@ export interface DraftToDomainResult {
   readonly bankRows: readonly BankScheduleRow[];
   readonly actualPayments: readonly ActualPayment[];
   readonly recalculationSettings: PreparedRecalculationSettings | null;
+  /** Extra non-amortising charges (insurance/legal) by date. */
+  readonly extraCharges: readonly PreparedExtraCharge[];
   readonly missingData: readonly DraftIssue[];
   readonly warnings: readonly DraftIssue[];
   /**
@@ -512,6 +521,25 @@ export function adaptDraftToDomain(
     status = 'requires_review';
   } else status = 'ready';
 
+  // Extra charges (insurance, legal, etc.): read each row's date and
+  // amount; skip rows missing either (never assume a value).
+  const extraCharges: PreparedExtraCharge[] = [];
+  for (const row of draft.extraChargesDraft.rows) {
+    const dateStr = readString(row.chargeDate);
+    const money = readMoney(row.amountCents, currency);
+    const amount = money === null ? null : money.cents;
+    if (dateStr !== null && dateStr !== 'unknown' && amount !== null) {
+      extraCharges.push({
+        dateISO: dateStr,
+        amountCents: amount,
+        description: readString(row.description),
+      });
+    } else if (dateStr !== null || amount !== null) {
+      // Partially filled row → flag, don't silently drop.
+      review('actual_payments', 'Πρόσθετη χρέωση', 'Πρόσθετη χρέωση με ελλιπή στοιχεία (ημερομηνία ή ποσό)· δεν συμπεριλήφθηκε στον υπολογισμό.');
+    }
+  }
+
   return {
     status,
     caseInfo,
@@ -520,6 +548,7 @@ export function adaptDraftToDomain(
     bankRows,
     actualPayments,
     recalculationSettings,
+    extraCharges,
     missingData,
     warnings,
     floatingRateProjection,

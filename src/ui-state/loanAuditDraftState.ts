@@ -134,6 +134,19 @@ export interface ActualPaymentsDraft {
   readonly sourceNote: FieldState<string>;
 }
 
+/** One extra non-amortising charge (insurance, legal, etc.) on a date. */
+export interface ExtraChargeDraftRow {
+  readonly chargeId: FieldState<string>;
+  readonly chargeDate: FieldState<string>;
+  readonly amountCents: FieldState<number>;
+  /** Free-text label: ασφάλιστρα, νομικά, έξοδα, etc. */
+  readonly description: FieldState<string>;
+}
+
+export interface ExtraChargesDraft {
+  readonly rows: readonly ExtraChargeDraftRow[];
+}
+
 export interface RecalculationSettingsDraft {
   /** 'equal_principal' | 'equal_installment' — draft string for now. */
   readonly scheduleMode: FieldState<string>;
@@ -162,6 +175,7 @@ export interface LoanAuditDraftState {
   readonly actualPaymentsDraft: ActualPaymentsDraft;
   readonly recalculationSettingsDraft: RecalculationSettingsDraft;
   readonly reportNotesDraft: ReportNotesDraft;
+  readonly extraChargesDraft: ExtraChargesDraft;
 }
 
 /**
@@ -216,6 +230,19 @@ export function createEmptyDraftState(): LoanAuditDraftState {
     reportNotesDraft: {
       analystNotes: fieldUnknown<string>('manual'),
     },
+    extraChargesDraft: {
+      rows: [],
+    },
+  };
+}
+
+/** A fresh extra-charge draft row: chargeId concrete, others unknown. */
+export function createEmptyExtraChargeDraftRow(chargeId: string): ExtraChargeDraftRow {
+  return {
+    chargeId: fieldValue<string>(chargeId, 'manual'),
+    chargeDate: fieldUnknown<string>('manual'),
+    amountCents: fieldUnknown<number>('manual'),
+    description: fieldUnknown<string>('manual'),
   };
 }
 
