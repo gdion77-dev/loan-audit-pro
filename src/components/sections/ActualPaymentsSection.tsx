@@ -58,6 +58,8 @@ export interface ActualPaymentsSectionProps {
     next: FieldState<string>,
   ) => void;
   readonly onExtraChargeMoneyChange?: (index: number, field: 'amountCents', next: FieldState<number>) => void;
+  /** Toggle: whether unpaid extra charges accrue default interest. */
+  readonly onExtraChargeAccrualChange?: (next: FieldState<string>) => void;
 }
 
 /**
@@ -124,6 +126,7 @@ export const ActualPaymentsSection: React.FC<ActualPaymentsSectionProps> = ({
   onExtraChargeRemove,
   onExtraChargeTextChange,
   onExtraChargeMoneyChange,
+  onExtraChargeAccrualChange,
 }) => {
   const scheduleOptions = buildScheduleOptions(bankScheduleDraft, pipelineResult);
   const hasSchedule = scheduleOptions.length > 1;
@@ -391,6 +394,30 @@ export const ActualPaymentsSection: React.FC<ActualPaymentsSectionProps> = ({
         <button type="button" className="lap-btn" style={{ marginTop: '10px' }} onClick={() => onExtraChargeAdd()}>
           Προσθήκη χρέωσης
         </button>
+
+        {onExtraChargeAccrualChange ? (
+          <div style={{ marginTop: '14px' }}>
+            <label htmlFor="charge-accrual" style={{ display: 'block', fontWeight: 600, marginBottom: '4px', fontSize: '13px' }}>
+              Τόκος υπερημερίας στις πρόσθετες χρεώσεις
+            </label>
+            <select
+              id="charge-accrual"
+              value={extraCharges?.accrueInterestOnCharges.status === 'value' ? extraCharges.accrueInterestOnCharges.value : 'yes'}
+              onChange={(e: { target: { value: string } }) =>
+                onExtraChargeAccrualChange(fieldValue<string>(e.target.value, 'manual'))
+              }
+              style={{ padding: '8px', minWidth: '320px' }}
+            >
+              <option value="yes">Ναι — οι χρεώσεις τοκίζονται όπως το κεφάλαιο</option>
+              <option value="no">Όχι — οφείλονται αλλά χωρίς τόκο υπερημερίας (συντηρητικό)</option>
+            </select>
+            <p className="lap-field-help" style={{ marginTop: '6px' }}>
+              Επιλέξτε «Όχι» για τη συντηρητική εκδοχή, όταν δεν τεκμηριώνεται συμβατικά ότι τα
+              έξοδα/ασφάλιστρα τοκίζονται αυτοτελώς. Τρέξτε και τις δύο εκδοχές για να δείτε τη
+              διαφορά στους τόκους υπερημερίας.
+            </p>
+          </div>
+        ) : null}
       </div>
     ) : null}
   </section>
