@@ -22,8 +22,10 @@ import type {
   ActualPaymentsDraft,
   ActualPaymentDraftRow,
   BankScheduleDraft,
+  ExtraChargesDraft,
 } from '../../ui-state/loanAuditDraftState';
 import type { FieldState } from '../../ui-state/fieldState';
+import { fieldValue, fieldUnknown } from '../../ui-state/fieldState';
 import type { LoanAuditPipelineResult } from '../../engines/loanAuditPipelineRunner';
 
 const def = SECTIONS.find((s) => s.id === 'actual_payments')!;
@@ -46,6 +48,16 @@ export interface ActualPaymentsSectionProps {
     next: FieldState<string>,
   ) => void;
   readonly onRowMoneyChange: (index: number, field: 'amountCents', next: FieldState<number>) => void;
+  /** Extra charges (insurance/legal) editing. */
+  readonly extraCharges?: ExtraChargesDraft;
+  readonly onExtraChargeAdd?: () => void;
+  readonly onExtraChargeRemove?: (index: number) => void;
+  readonly onExtraChargeTextChange?: (
+    index: number,
+    field: 'chargeDate' | 'description',
+    next: FieldState<string>,
+  ) => void;
+  readonly onExtraChargeMoneyChange?: (index: number, field: 'amountCents', next: FieldState<number>) => void;
 }
 
 /**
@@ -107,6 +119,11 @@ export const ActualPaymentsSection: React.FC<ActualPaymentsSectionProps> = ({
   onRemoveRow,
   onRowTextChange,
   onRowMoneyChange,
+  extraCharges,
+  onExtraChargeAdd,
+  onExtraChargeRemove,
+  onExtraChargeTextChange,
+  onExtraChargeMoneyChange,
 }) => {
   const scheduleOptions = buildScheduleOptions(bankScheduleDraft, pipelineResult);
   const hasSchedule = scheduleOptions.length > 1;
@@ -278,6 +295,104 @@ export const ActualPaymentsSection: React.FC<ActualPaymentsSectionProps> = ({
         </tbody>
       </table>
     )}
+
+    {onExtraChargeAdd ? (
+      <div style={{ marginTop: '22px', borderTop: '1px solid var(--hair, #e2e2e2)', paddingTop: '16px' }}>
+        <h3 className="lap-card__subtitle" style={{ marginTop: 0 }}>Πρόσθετες χρεώσεις (ασφάλιστρα, νομικά, έξοδα)</h3>
+        <p className="lap-field-help" style={{ marginTop: 0 }}>
+          Χρεώσεις σε συγκεκριμένες ημερομηνίες που αυξάνουν το οφειλόμενο της περιόδου. Μπορεί να
+          συμπίπτουν με ημερομηνία δόσης. Αν δεν εξοφληθούν, μεταφέρονται ως ληξιπρόθεσμες και τοκίζονται
+          με τόκο υπερημερίας όπως το κεφάλαιο.
+        </p>
+
+        {(extraCharges?.rows.length ?? 0) > 0 ? (
+          <table className="lap-table" style={{ marginTop: '10px' }}>
+            <thead>
+              <tr>
+                <th>Ημερομηνία</th>
+                <th>Ποσό</th>
+                <th>Περιγραφή</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {extraCharges!.rows.map((row, index) => {
+                const key = row.chargeId.status === 'value' ? row.chargeId.value : `charge-${index}`;
+                return (
+                  <tr key={key}>
+                    <td>
+                      <input
+                        type="date"
+                        value={row.chargeDate.status === 'value' ? row.chargeDate.value : ''}
+                        onChange={(e: { target: { value: string } }) =>
+                          onExtraChargeTextChange?.(
+                            index,
+                            'chargeDate',
+                            e.target.value === '' ? fieldUnknown<string>('manual') : fieldValue<string>(e.target.value, 'manual'),
+                          )
+                        }
+                        style={{ padding: '6px' }}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="π.χ. 100,00"
+                        defaultValue={
+                          row.amountCents.status === 'value' && row.amountCents.value !== null
+                            ? formatMoneyGreek({ cents: row.amountCents.value, currency: 'EUR' })
+                            : ''
+                        }
+                        onBlur={(e: { target: { value: string } }) => {
+                          const cents = parseAmountToCents(e.target.value);
+                          onExtraChargeMoneyChange?.(
+                            index,
+                            'amountCents',
+                            cents === null ? fieldUnknown<number>('manual') : fieldValue<number>(cents, 'manual'),
+                          );
+                        }}
+                        style={{ padding: '6px', width: '110px' }}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="text"
+                        placeholder="π.χ. ασφάλιστρα"
+                        value={row.description.status === 'value' ? row.description.value : ''}
+                        onChange={(e: { target: { value: string } }) =>
+                          onExtraChargeTextChange?.(
+                            index,
+                            'description',
+                            e.target.value === '' ? fieldUnknown<string>('manual') : fieldValue<string>(e.target.value, 'manual'),
+                          )
+                        }
+                        style={{ padding: '6px', width: '160px' }}
+                      />
+                    </td>
+                    <td>
+                      <button
+                        type="button"
+                        className="lap-btn lap-btn--danger"
+                        onClick={() => onExtraChargeRemove?.(index)}
+                      >
+                        Διαγραφή
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        ) : (
+          <p className="lap-field-help">Δεν έχουν καταχωρηθεί πρόσθετες χρεώσεις.</p>
+        )}
+
+        <button type="button" className="lap-btn" style={{ marginTop: '10px' }} onClick={() => onExtraChargeAdd()}>
+          Προσθήκη χρέωσης
+        </button>
+      </div>
+    ) : null}
   </section>
   );
 };
