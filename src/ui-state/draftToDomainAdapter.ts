@@ -87,6 +87,8 @@ export interface DraftToDomainResult {
   readonly recalculationSettings: PreparedRecalculationSettings | null;
   /** Extra non-amortising charges (insurance/legal) by date. */
   readonly extraCharges: readonly PreparedExtraCharge[];
+  /** Whether unpaid extra charges accrue default interest (default true). */
+  readonly accrueInterestOnExtraCharges: boolean;
   readonly missingData: readonly DraftIssue[];
   readonly warnings: readonly DraftIssue[];
   /**
@@ -540,6 +542,9 @@ export function adaptDraftToDomain(
     }
   }
 
+  const accrueChargesStr = readString(draft.extraChargesDraft.accrueInterestOnCharges);
+  const accrueInterestOnExtraCharges = accrueChargesStr !== 'no';
+
   return {
     status,
     caseInfo,
@@ -549,6 +554,7 @@ export function adaptDraftToDomain(
     actualPayments,
     recalculationSettings,
     extraCharges,
+    accrueInterestOnExtraCharges,
     missingData,
     warnings,
     floatingRateProjection,

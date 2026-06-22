@@ -145,6 +145,12 @@ export interface ExtraChargeDraftRow {
 
 export interface ExtraChargesDraft {
   readonly rows: readonly ExtraChargeDraftRow[];
+  /**
+   * Whether unpaid extra charges accrue default interest like principal.
+   * 'yes' (default) = charges accrue; 'no' = conservative (owed but
+   * interest-free). Stored as a draft string for the select control.
+   */
+  readonly accrueInterestOnCharges: FieldState<string>;
 }
 
 export interface RecalculationSettingsDraft {
@@ -232,6 +238,7 @@ export function createEmptyDraftState(): LoanAuditDraftState {
     },
     extraChargesDraft: {
       rows: [],
+      accrueInterestOnCharges: fieldValue<string>('yes', 'manual'),
     },
   };
 }

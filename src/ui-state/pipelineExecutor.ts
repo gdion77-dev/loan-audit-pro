@@ -344,6 +344,7 @@ export function executePipelineFromDraft(
           surchargeField.status === 'value' ? surchargeField.value : null,
         capitalizeLateInterestSemiAnnually:
           capitalizeField.status === 'value' && capitalizeField.value === 'yes',
+        accrueDefaultInterestOnExtraCharges: adapted.accrueInterestOnExtraCharges,
         currency,
       });
     }
