@@ -107,6 +107,14 @@ export interface DueInstallment {
    * may be smaller, late, or an explicit zero (not paid).
    */
   readonly hasRecordedException: boolean;
+  /**
+   * Extra non-amortising charges falling due in THIS period (e.g.
+   * insurance premiums, legal costs). They increase the amount owed
+   * for the period and, if unpaid, roll into overdue principal and
+   * accrue default interest exactly like principal. Optional; absent
+   * or 0 means no extra charge. Never assumed.
+   */
+  readonly extraChargesCents?: number;
 }
 
 /** One actual payment made by the debtor. */
@@ -152,6 +160,8 @@ export interface ActualAmortizationRow {
   readonly contractualInterestCents: number;
   /** Sum of actual payments allocated against this installment. */
   readonly paidCents: number;
+  /** Extra non-amortising charges (insurance, legal, etc.) due this period. */
+  readonly extraChargesCents: number;
   readonly lastPaymentDate: ISODate | null;
   /** Default interest accrued during THIS period on outstanding overdue principal. */
   readonly defaultInterestAccruedCents: number | null;
@@ -347,7 +357,9 @@ export function buildActualPaymentsAmortization(
     let paidCents: number;
     let lastPaymentDate: ISODate | null;
     if (!due.hasRecordedException) {
-      paidCents = due.installmentCents;
+      // Clean period: assume the debtor paid the full obligation,
+      // including any extra charge that fell due this period.
+      paidCents = due.installmentCents + (due.extraChargesCents ?? 0);
       lastPaymentDate = due.dueDate;
     } else {
       paidCents = payments.reduce((sum, p) => sum + p.amountCents, 0);
@@ -431,20 +443,44 @@ export function buildActualPaymentsAmortization(
     remaining -= toCurrentPrincipal;
     const currentPrincipalStillUnpaid = due.principalCents - toCurrentPrincipal;
 
+    // (6b) current extra charges (insurance, legal, etc.). Per the user's
+    // contractual treatment these behave like principal: if unpaid they
+    // roll into overdue principal and accrue default interest the same
+    // way. They are settled AFTER this period's scheduled principal.
+    const extraChargesDue = due.extraChargesCents ?? 0;
+    const toExtraCharges = Math.min(remaining, extraChargesDue);
+    remaining -= toExtraCharges;
+    const extraChargesStillUnpaid = extraChargesDue - toExtraCharges;
+
     const overpaymentCents = remaining; // paid beyond all obligations
 
-    // Aggregates for reporting (interest vs principal split).
+    // Aggregates for reporting (interest vs principal split). Extra
+    // charges are grouped with principal, matching their treatment.
     const toInterest = toDefaultInterest + toOverdueContractual + toCurrentContractual;
-    const toPrincipal = toOverduePrincipal + toCurrentPrincipal;
+    const toPrincipal = toOverduePrincipal + toCurrentPrincipal + toExtraCharges;
 
-    // Principal balance falls ONLY by what was allocated to principal.
-    const principalReducedCents = toPrincipal;
+    // Principal balance falls ONLY by what was allocated to scheduled
+    // principal (levels 5–6) — NOT by extra charges, which are not part
+    // of the loan principal balance even though they share its arrears
+    // treatment.
+    const principalReducedCents = toOverduePrincipal + toCurrentPrincipal;
     runningPrincipalCents -= principalReducedCents;
 
-    // Carry forward the still-unpaid sub-buckets.
+    // Carry forward the still-unpaid sub-buckets. Unpaid extra charges
+    // join overdue principal (same default-interest base).
     carriedDefaultInterestCents = defaultInterestStillUnpaid;
     carriedContractualInterestCents = overdueContractualStillUnpaid + currentContractualStillUnpaid;
-    overduePrincipalCents = overduePrincipalStillUnpaid + currentPrincipalStillUnpaid;
+    overduePrincipalCents =
+      overduePrincipalStillUnpaid + currentPrincipalStillUnpaid + extraChargesStillUnpaid;
+
+    if (extraChargesDue > 0) {
+      auditEntries.push(
+        info(
+          AC.PAYMENT_ALLOCATED,
+          `Δόση ${due.rowId}: πρόσθετη χρέωση περιόδου ${extraChargesDue / 100} ${currency} (π.χ. ασφάλιστρα/έξοδα)· εξοφλήθηκε ${toExtraCharges / 100} ${currency}, μεταφέρεται ως ληξιπρόθεσμο ${extraChargesStillUnpaid / 100} ${currency} με τόκο υπερημερίας όπως το κεφάλαιο.`,
+        ),
+      );
+    }
 
     const interestStillUnpaid =
       defaultInterestStillUnpaid + overdueContractualStillUnpaid + currentContractualStillUnpaid;
@@ -509,6 +545,7 @@ export function buildActualPaymentsAmortization(
       dueDate: due.dueDate,
       installmentCents: due.installmentCents,
       contractualInterestCents: due.interestCents,
+      extraChargesCents: due.extraChargesCents ?? 0,
       paidCents,
       lastPaymentDate,
       defaultInterestAccruedCents: periodDefaultInterest,
