@@ -414,6 +414,12 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
   ): void => {
     setDraftState((prev) => updateExtraChargeDraftRowField(prev, index, field, next));
   };
+  const onExtraChargeAccrualChange = (next: FieldState<string>): void => {
+    setDraftState((prev) => ({
+      ...prev,
+      extraChargesDraft: { ...prev.extraChargesDraft, accrueInterestOnCharges: next },
+    }));
+  };
 
   const renderActive = (): React.ReactElement => {
     if (activeSection === 'case_info') {
@@ -482,6 +488,7 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
           onExtraChargeRemove={onExtraChargeRemove}
           onExtraChargeTextChange={onExtraChargeTextChange}
           onExtraChargeMoneyChange={onExtraChargeMoneyChange}
+          onExtraChargeAccrualChange={onExtraChargeAccrualChange}
         />
       );
     }
