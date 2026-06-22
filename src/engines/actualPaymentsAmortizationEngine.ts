@@ -139,6 +139,15 @@ export interface ActualPaymentsAmortizationConfig {
   readonly lateInterestSurchargePercent: number | null;
   /** Default false — see methodology note 5 above. */
   readonly capitalizeLateInterestSemiAnnually?: boolean;
+  /**
+   * Whether unpaid extra charges (insurance, legal) accrue default
+   * interest like principal. Default true (they share the overdue
+   * base). Set false for the conservative scenario where overdue
+   * extra charges are still owed but do NOT themselves bear default
+   * interest — only overdue PRINCIPAL does (Άρθρο 345 ΑΚ). The
+   * difference quantifies the disputed insurance-interest component.
+   */
+  readonly accrueDefaultInterestOnExtraCharges?: boolean;
   readonly currency?: CurrencyCode;
 }
 
@@ -283,6 +292,10 @@ export function buildActualPaymentsAmortization(
   }
 
   const capitalize = config.capitalizeLateInterestSemiAnnually === true;
+  // Default true: unpaid extra charges accrue default interest like
+  // principal (caller's stated contractual treatment). False isolates
+  // the conservative scenario.
+  const chargesAccrue = config.accrueDefaultInterestOnExtraCharges !== false;
   const anchorDate = dueInstallments[0]!.dueDate;
 
   let runningPrincipalCents = config.openingPrincipalCents;
@@ -292,6 +305,11 @@ export function buildActualPaymentsAmortization(
   // default interest → contractual interest → principal. Neither
   // interest bucket ever enters the default-interest base (ΑΚ 296).
   let overduePrincipalCents = 0;
+  // Overdue extra charges (insurance/legal) carried separately. When
+  // accrueDefaultInterestOnExtraCharges is true they are folded into
+  // overduePrincipalCents (same default base); when false they are kept
+  // here, owed but NOT bearing default interest (Άρθρο 345 ΑΚ).
+  let overdueExtraChargesCents = 0;
   let carriedDefaultInterestCents = 0; // unpaid default interest carried over
   let carriedContractualInterestCents = 0; // unpaid contractual interest carried over
   let totalDefaultInterestCents = surcharge !== null ? 0 : null;
@@ -434,9 +452,18 @@ export function buildActualPaymentsAmortization(
     const currentContractualStillUnpaid = contractualInterestDue - toCurrentContractual;
 
     // (5) overdue (carried) principal
+    // (5) overdue (carried) principal
     const toOverduePrincipal = Math.min(remaining, overduePrincipalCents);
     remaining -= toOverduePrincipal;
     const overduePrincipalStillUnpaid = overduePrincipalCents - toOverduePrincipal;
+
+    // (5b) overdue (carried) extra charges — only relevant when they are
+    // tracked separately (charges do NOT accrue interest). When they DO
+    // accrue, they live inside overduePrincipalCents and are covered by
+    // level (5) above, so this bucket stays 0.
+    const toOverdueExtraCharges = Math.min(remaining, overdueExtraChargesCents);
+    remaining -= toOverdueExtraCharges;
+    const overdueExtraChargesStillUnpaid = overdueExtraChargesCents - toOverdueExtraCharges;
 
     // (6) current principal
     const toCurrentPrincipal = Math.min(remaining, due.principalCents);
@@ -455,9 +482,10 @@ export function buildActualPaymentsAmortization(
     const overpaymentCents = remaining; // paid beyond all obligations
 
     // Aggregates for reporting (interest vs principal split). Extra
-    // charges are grouped with principal, matching their treatment.
+    // charges (current + old overdue) are grouped with principal.
     const toInterest = toDefaultInterest + toOverdueContractual + toCurrentContractual;
-    const toPrincipal = toOverduePrincipal + toCurrentPrincipal + toExtraCharges;
+    const toPrincipal =
+      toOverduePrincipal + toCurrentPrincipal + toExtraCharges + toOverdueExtraCharges;
 
     // Principal balance falls ONLY by what was allocated to scheduled
     // principal (levels 5–6) — NOT by extra charges, which are not part
@@ -466,25 +494,38 @@ export function buildActualPaymentsAmortization(
     const principalReducedCents = toOverduePrincipal + toCurrentPrincipal;
     runningPrincipalCents -= principalReducedCents;
 
-    // Carry forward the still-unpaid sub-buckets. Unpaid extra charges
-    // join overdue principal (same default-interest base).
+    // Carry forward the still-unpaid sub-buckets.
     carriedDefaultInterestCents = defaultInterestStillUnpaid;
     carriedContractualInterestCents = overdueContractualStillUnpaid + currentContractualStillUnpaid;
-    overduePrincipalCents =
-      overduePrincipalStillUnpaid + currentPrincipalStillUnpaid + extraChargesStillUnpaid;
+
+    const newlyUnpaidCharges = extraChargesStillUnpaid;
+    if (chargesAccrue) {
+      // Charges accrue default interest → fold into overdue principal base.
+      overduePrincipalCents =
+        overduePrincipalStillUnpaid + currentPrincipalStillUnpaid + newlyUnpaidCharges;
+      overdueExtraChargesCents = 0;
+    } else {
+      // Charges owed but interest-free → keep in a separate bucket that
+      // never enters the default-interest base.
+      overduePrincipalCents = overduePrincipalStillUnpaid + currentPrincipalStillUnpaid;
+      overdueExtraChargesCents = overdueExtraChargesStillUnpaid + newlyUnpaidCharges;
+    }
 
     if (extraChargesDue > 0) {
+      const note = chargesAccrue
+        ? `με τόκο υπερημερίας όπως το κεφάλαιο`
+        : `χωρίς τόκο υπερημερίας (διατηρείται ως ληξιπρόθεσμο έξοδο)`;
       auditEntries.push(
         info(
           AC.PAYMENT_ALLOCATED,
-          `Δόση ${due.rowId}: πρόσθετη χρέωση περιόδου ${extraChargesDue / 100} ${currency} (π.χ. ασφάλιστρα/έξοδα)· εξοφλήθηκε ${toExtraCharges / 100} ${currency}, μεταφέρεται ως ληξιπρόθεσμο ${extraChargesStillUnpaid / 100} ${currency} με τόκο υπερημερίας όπως το κεφάλαιο.`,
+          `Δόση ${due.rowId}: πρόσθετη χρέωση περιόδου ${extraChargesDue / 100} ${currency} (π.χ. ασφάλιστρα/έξοδα)· εξοφλήθηκε ${toExtraCharges / 100} ${currency}, μεταφέρεται ως ληξιπρόθεσμο ${extraChargesStillUnpaid / 100} ${currency} ${note}.`,
         ),
       );
     }
 
     const interestStillUnpaid =
       defaultInterestStillUnpaid + overdueContractualStillUnpaid + currentContractualStillUnpaid;
-    const principalStillOverdue = overduePrincipalCents;
+    const principalStillOverdue = overduePrincipalCents + overdueExtraChargesCents;
 
     // --- 5. Audit + warnings ---
     if (interestStillUnpaid > 0) {
@@ -552,7 +593,7 @@ export function buildActualPaymentsAmortization(
       defaultInterestDays: ownDefaultDays,
       appliedToInterestCents: toInterest,
       appliedToPrincipalCents: toPrincipal,
-      overduePrincipalCents,
+      overduePrincipalCents: overduePrincipalCents + overdueExtraChargesCents,
       unpaidInterestCarryForwardCents: carriedDefaultInterestCents + carriedContractualInterestCents,
       status,
       actualClosingBalanceCents: runningPrincipalCents,
@@ -567,7 +608,7 @@ export function buildActualPaymentsAmortization(
     rows,
     totalLateInterestCents: totalDefaultInterestCents,
     finalUnpaidInterestCents: carriedDefaultInterestCents + carriedContractualInterestCents,
-    finalOverduePrincipalCents: overduePrincipalCents,
+    finalOverduePrincipalCents: overduePrincipalCents + overdueExtraChargesCents,
     finalActualBalanceCents: finalRow ? finalRow.actualClosingBalanceCents : config.openingPrincipalCents,
     auditEntries,
   };
