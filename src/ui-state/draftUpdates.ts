@@ -154,9 +154,16 @@ export function addManyActualPaymentDraftRows(
   if (count === 0) return state;
   const step = spec.stepMonths > 0 ? Math.floor(spec.stepMonths) : 1;
 
+  // Build two lookups: exact ISO date, and year-month (so a payment on a
+  // different day of the same month still matches that month's installment).
   const byDate = new Map<string, string>();
+  const byMonth = new Map<string, string>();
   for (const r of scheduleRows ?? []) {
-    if (r.dueDateISO !== null && !byDate.has(r.dueDateISO)) byDate.set(r.dueDateISO, r.rowId);
+    if (r.dueDateISO !== null) {
+      if (!byDate.has(r.dueDateISO)) byDate.set(r.dueDateISO, r.rowId);
+      const ym = r.dueDateISO.slice(0, 7); // yyyy-mm
+      if (!byMonth.has(ym)) byMonth.set(ym, r.rowId);
+    }
   }
 
   const newRows: ActualPaymentDraftRow[] = [];
@@ -164,7 +171,7 @@ export function addManyActualPaymentDraftRows(
     const id = `draft-payment-${++paymentRowSeq}`;
     const dateISO = addMonthsClampedISO(spec.firstDateISO, i * step);
     const base = createEmptyActualPaymentDraftRow(id);
-    const matchedRowId = byDate.get(dateISO) ?? null;
+    const matchedRowId = byDate.get(dateISO) ?? byMonth.get(dateISO.slice(0, 7)) ?? null;
     newRows.push({
       ...base,
       paymentDate: fieldValue<string>(dateISO, 'manual'),
