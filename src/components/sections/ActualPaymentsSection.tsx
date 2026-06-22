@@ -60,6 +60,8 @@ export interface ActualPaymentsSectionProps {
   readonly onExtraChargeMoneyChange?: (index: number, field: 'amountCents', next: FieldState<number>) => void;
   /** Toggle: whether unpaid extra charges accrue default interest. */
   readonly onExtraChargeAccrualChange?: (next: FieldState<string>) => void;
+  /** Toggle: allocation order of charges vs current principal. */
+  readonly onExtraChargeOrderChange?: (next: FieldState<string>) => void;
 }
 
 /**
@@ -127,6 +129,7 @@ export const ActualPaymentsSection: React.FC<ActualPaymentsSectionProps> = ({
   onExtraChargeTextChange,
   onExtraChargeMoneyChange,
   onExtraChargeAccrualChange,
+  onExtraChargeOrderChange,
 }) => {
   const scheduleOptions = buildScheduleOptions(bankScheduleDraft, pipelineResult);
   const hasSchedule = scheduleOptions.length > 1;
@@ -415,6 +418,29 @@ export const ActualPaymentsSection: React.FC<ActualPaymentsSectionProps> = ({
               Επιλέξτε «Όχι» για τη συντηρητική εκδοχή, όταν δεν τεκμηριώνεται συμβατικά ότι τα
               έξοδα/ασφάλιστρα τοκίζονται αυτοτελώς. Τρέξτε και τις δύο εκδοχές για να δείτε τη
               διαφορά στους τόκους υπερημερίας.
+            </p>
+          </div>
+        ) : null}
+
+        {onExtraChargeOrderChange ? (
+          <div style={{ marginTop: '14px' }}>
+            <label htmlFor="charge-order" style={{ display: 'block', fontWeight: 600, marginBottom: '4px', fontSize: '13px' }}>
+              Σειρά καταλογισμού χρεώσεων
+            </label>
+            <select
+              id="charge-order"
+              value={extraCharges?.chargesOrder.status === 'value' ? extraCharges.chargesOrder.value : 'capital_first'}
+              onChange={(e: { target: { value: string } }) =>
+                onExtraChargeOrderChange(fieldValue<string>(e.target.value, 'manual'))
+              }
+              style={{ padding: '8px', minWidth: '320px' }}
+            >
+              <option value="capital_first">Πρώτα κεφάλαιο, μετά χρεώσεις (αυστηρό ΑΚ 423)</option>
+              <option value="charges_first">Πρώτα χρεώσεις, μετά κεφάλαιο (μέθοδος servicer/Cepal)</option>
+            </select>
+            <p className="lap-field-help" style={{ marginTop: '6px' }}>
+              Η μέθοδος «servicer/Cepal» εξοφλεί πρώτα τα ασφάλιστρα/έξοδα και αφήνει ακάλυπτο
+              κεφάλαιο. Χρησιμοποιήστε την για να αναπαραγάγετε τον υπολογισμό της τράπεζας.
             </p>
           </div>
         ) : null}
