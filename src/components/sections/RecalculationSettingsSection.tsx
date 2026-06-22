@@ -17,6 +17,7 @@ import {
   type RecalculationSettingsDraft,
 } from '../../ui-state/loanAuditDraftState';
 import type { FieldState } from '../../ui-state/fieldState';
+import { fieldValue } from '../../ui-state/fieldState';
 
 const def = SECTIONS.find((s) => s.id === 'recalc_settings')!;
 
@@ -85,6 +86,20 @@ export const RecalculationSettingsSection: React.FC<RecalculationSettingsSection
           onChange={(next) => onMoneyChange('feesAndPremiumsPerPeriodCents', next)}
           placeholder="π.χ. 15,00"
         />
+        <div style={{ marginTop: '6px' }}>
+          <button
+            type="button"
+            className="lap-btn lap-btn--secondary"
+            onClick={() => onMoneyChange('feesAndPremiumsPerPeriodCents', fieldValue<number>(0, 'manual'))}
+          >
+            Χωρίς έξοδα (μηδέν)
+          </button>
+          <p className="lap-field-help" style={{ marginTop: '4px' }}>
+            Αν δεν υπάρχουν έξοδα/ασφάλιστρα ανά δόση, πατήστε «Χωρίς έξοδα» για να οριστεί ρητά
+            το μηδέν. <strong>Μην βάζετε 1€</strong>: κάθε ποσό εδώ προστίθεται σε κάθε δόση και
+            μεταβάλλει τον υπολογισμό (ιδίως την τελευταία δόση).
+          </p>
+        </div>
       </div>
 
       <div className="lap-help-block" style={{ marginTop: '12px' }}>
