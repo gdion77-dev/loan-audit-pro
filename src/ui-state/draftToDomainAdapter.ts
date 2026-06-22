@@ -89,6 +89,8 @@ export interface DraftToDomainResult {
   readonly extraCharges: readonly PreparedExtraCharge[];
   /** Whether unpaid extra charges accrue default interest (default true). */
   readonly accrueInterestOnExtraCharges: boolean;
+  /** True = charges paid before current principal (servicer order). */
+  readonly chargesPaidBeforePrincipal: boolean;
   readonly missingData: readonly DraftIssue[];
   readonly warnings: readonly DraftIssue[];
   /**
@@ -544,6 +546,8 @@ export function adaptDraftToDomain(
 
   const accrueChargesStr = readString(draft.extraChargesDraft.accrueInterestOnCharges);
   const accrueInterestOnExtraCharges = accrueChargesStr !== 'no';
+  const chargesOrderStr = readString(draft.extraChargesDraft.chargesOrder);
+  const chargesPaidBeforePrincipal = chargesOrderStr === 'charges_first';
 
   return {
     status,
@@ -555,6 +559,7 @@ export function adaptDraftToDomain(
     recalculationSettings,
     extraCharges,
     accrueInterestOnExtraCharges,
+    chargesPaidBeforePrincipal,
     missingData,
     warnings,
     floatingRateProjection,

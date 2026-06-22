@@ -151,6 +151,11 @@ export interface ExtraChargesDraft {
    * interest-free). Stored as a draft string for the select control.
    */
   readonly accrueInterestOnCharges: FieldState<string>;
+  /**
+   * Allocation order: 'capital_first' (strict ΑΚ 423) or 'charges_first'
+   * (servicer/Cepal practice — insurance deducted before capital).
+   */
+  readonly chargesOrder: FieldState<string>;
 }
 
 export interface RecalculationSettingsDraft {
@@ -239,6 +244,7 @@ export function createEmptyDraftState(): LoanAuditDraftState {
     extraChargesDraft: {
       rows: [],
       accrueInterestOnCharges: fieldValue<string>('yes', 'manual'),
+      chargesOrder: fieldValue<string>('capital_first', 'manual'),
     },
   };
 }

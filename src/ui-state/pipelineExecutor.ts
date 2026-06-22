@@ -345,6 +345,7 @@ export function executePipelineFromDraft(
         capitalizeLateInterestSemiAnnually:
           capitalizeField.status === 'value' && capitalizeField.value === 'yes',
         accrueDefaultInterestOnExtraCharges: adapted.accrueInterestOnExtraCharges,
+        chargesPaidBeforePrincipal: adapted.chargesPaidBeforePrincipal,
         currency,
       });
     }
