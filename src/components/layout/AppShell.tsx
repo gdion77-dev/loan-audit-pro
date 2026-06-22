@@ -43,6 +43,9 @@ import { fetchEcbIndex, type EcbIndexCode, type EcbFetchStatus } from '../../ser
   addManyActualPaymentDraftRows,
   removeActualPaymentDraftRow,
   updateActualPaymentDraftRowField,
+  addExtraChargeDraftRow,
+  removeExtraChargeDraftRow,
+  updateExtraChargeDraftRowField,
 } from '../../ui-state/draftUpdates';
 import type { FieldState } from '../../ui-state/fieldState';
 import { CaseInfoSection } from '../sections/CaseInfoSection';
@@ -391,6 +394,27 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
     setDraftState((prev) => updateActualPaymentDraftRowField(prev, index, field, next));
   };
 
+  const onExtraChargeAdd = (): void => {
+    setDraftState((prev) => addExtraChargeDraftRow(prev));
+  };
+  const onExtraChargeRemove = (index: number): void => {
+    setDraftState((prev) => removeExtraChargeDraftRow(prev, index));
+  };
+  const onExtraChargeTextChange = (
+    index: number,
+    field: 'chargeDate' | 'description',
+    next: FieldState<string>,
+  ): void => {
+    setDraftState((prev) => updateExtraChargeDraftRowField(prev, index, field, next));
+  };
+  const onExtraChargeMoneyChange = (
+    index: number,
+    field: 'amountCents',
+    next: FieldState<number>,
+  ): void => {
+    setDraftState((prev) => updateExtraChargeDraftRowField(prev, index, field, next));
+  };
+
   const renderActive = (): React.ReactElement => {
     if (activeSection === 'case_info') {
       return (
@@ -453,6 +477,11 @@ export const AppShell: React.FC<AppShellProps> = ({ initialSection, initialDraft
           onRemoveRow={onPaymentRemoveRow}
           onRowTextChange={onPaymentRowTextChange}
           onRowMoneyChange={onPaymentRowMoneyChange}
+          extraCharges={draftState.extraChargesDraft}
+          onExtraChargeAdd={onExtraChargeAdd}
+          onExtraChargeRemove={onExtraChargeRemove}
+          onExtraChargeTextChange={onExtraChargeTextChange}
+          onExtraChargeMoneyChange={onExtraChargeMoneyChange}
         />
       );
     }
