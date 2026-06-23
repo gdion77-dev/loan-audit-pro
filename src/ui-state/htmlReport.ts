@@ -40,6 +40,7 @@ function buildActualAmortizationData(
     rows: amort.rows.map((r) => ({
       date: isoToGreek(r.dueDate),
       installment: eur(r.installmentCents),
+      extraCharges: r.extraChargesCents > 0 ? eur(r.extraChargesCents) : null,
       paid: eur(r.paidCents),
       defaultInterest: r.defaultInterestAccruedCents === null ? null : eur(r.defaultInterestAccruedCents),
       toInterest: eur(r.appliedToInterestCents),
@@ -273,6 +274,12 @@ function buildReportData(
           amort && amort.totalLateInterestCents !== null ? eur(amort.totalLateInterestCents) : null,
         actualBalance:
           amort && amort.finalActualBalanceCents !== null ? eur(amort.finalActualBalanceCents) : null,
+        totalExtraCharges: amort
+          ? (() => {
+              const sum = amort.rows.reduce((s, r) => s + (r.extraChargesCents ?? 0), 0);
+              return sum > 0 ? eur(sum) : null;
+            })()
+          : null,
         // Analyst free-text observations
         analystNotes: analystNotes && analystNotes.trim() !== '' ? analystNotes.trim() : null,
       };
