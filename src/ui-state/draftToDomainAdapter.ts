@@ -526,9 +526,15 @@ export function adaptDraftToDomain(
   } else status = 'ready';
 
   // Extra charges (insurance, legal, etc.): read each row's date and
-  // amount; skip rows missing either (never assume a value).
+  // amount; skip rows missing either (never assume a value). Older saved
+  // cases predate this field, so default safely when it is absent.
+  const extraChargesDraft = draft.extraChargesDraft ?? {
+    rows: [],
+    accrueInterestOnCharges: null,
+    chargesOrder: null,
+  };
   const extraCharges: PreparedExtraCharge[] = [];
-  for (const row of draft.extraChargesDraft.rows) {
+  for (const row of extraChargesDraft.rows) {
     const dateStr = readString(row.chargeDate);
     const money = readMoney(row.amountCents, currency);
     const amount = money === null ? null : money.cents;
@@ -544,9 +550,13 @@ export function adaptDraftToDomain(
     }
   }
 
-  const accrueChargesStr = readString(draft.extraChargesDraft.accrueInterestOnCharges);
+  const accrueChargesStr = extraChargesDraft.accrueInterestOnCharges
+    ? readString(extraChargesDraft.accrueInterestOnCharges)
+    : null;
   const accrueInterestOnExtraCharges = accrueChargesStr !== 'no';
-  const chargesOrderStr = readString(draft.extraChargesDraft.chargesOrder);
+  const chargesOrderStr = extraChargesDraft.chargesOrder
+    ? readString(extraChargesDraft.chargesOrder)
+    : null;
   const chargesPaidBeforePrincipal = chargesOrderStr === 'charges_first';
 
   return {
